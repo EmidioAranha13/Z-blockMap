@@ -1,12 +1,9 @@
 /**
  * Folha de estilos global do Z-blockMap.
  *
- * Dois temas: noite (fundo preto) e dia (fundo branco).
- * O canvas usa as mesmas cores de fundo via THEME_CANVAS em palette.js.
- *
- * Importante: não colocar as cores da noite só em :root sem um seletor de
- * tema dia mais específico. :root sempre casa com <html>, então o dia
- * precisa ganhar na especificidade (html[data-theme='day']).
+ * Dois temas via classe no <html>: theme-night e theme-day.
+ * Não alterar color-scheme no documento: no Chromium isso pode
+ * transformar o <canvas> numa camada preta em tela cheia.
  */
 
 :root {
@@ -15,9 +12,7 @@
   --mono: "Cascadia Mono", "Consolas", monospace;
 }
 
-html,
-html[data-theme='night'] {
-  color-scheme: dark;
+html.theme-night {
   --bg: #000000;
   --bg-panel: #141414;
   --bg-raised: #1c1c1c;
@@ -34,8 +29,7 @@ html[data-theme='night'] {
   --danger-text: #e8b4aa;
 }
 
-html[data-theme='day'] {
-  color-scheme: light;
+html.theme-day {
   --bg: #ffffff;
   --bg-panel: #f4f4f4;
   --bg-raised: #ffffff;
@@ -63,9 +57,24 @@ body,
   height: 100%;
   max-height: 100%;
   overflow: hidden;
-  background: var(--bg);
+  background-color: var(--bg);
   color: var(--ink);
   font-family: var(--font);
+  forced-color-adjust: none;
+}
+
+html.theme-night,
+html.theme-night body,
+html.theme-night #app {
+  background-color: #000000;
+  color: #ececec;
+}
+
+html.theme-day,
+html.theme-day body,
+html.theme-day #app {
+  background-color: #ffffff;
+  color: #1a1a1a;
 }
 
 @supports (height: 100dvh) {

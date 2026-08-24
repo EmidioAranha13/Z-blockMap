@@ -1,8 +1,8 @@
 /**
  * Tema dia / noite da interface.
  *
- * Aplica data-theme no <html> para as variáveis CSS e guarda a escolha
- * no localStorage. O canvas lê o mesmo valor para fundo branco/preto.
+ * Classe no <html> (theme-day / theme-night) + data-theme para os
+ * seletores :global. O canvas lê o mesmo valor para fundo branco/preto.
  */
 import { onMounted, ref, watch } from 'vue'
 
@@ -22,13 +22,18 @@ function readStored() {
 }
 
 /**
- * Aplica o tema no documento (variáveis CSS em html[data-theme]).
+ * Aplica o tema no documento.
  * @param {'day' | 'night'} next
  */
 function apply(next) {
   const root = document.documentElement
+  const isDay = next === 'day'
   root.setAttribute('data-theme', next)
-  root.style.colorScheme = next === 'day' ? 'light' : 'dark'
+  root.classList.toggle('theme-day', isDay)
+  root.classList.toggle('theme-night', !isDay)
+  // Nunca setar color-scheme no <html>: no Chromium isso recria a
+  // camada GPU do <canvas> e ela pode cobrir a página inteira de preto.
+  root.style.removeProperty('color-scheme')
   try {
     localStorage.setItem(STORAGE_KEY, next)
   } catch {

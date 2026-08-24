@@ -102,7 +102,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page" :class="{ 'page--day': theme === 'day' }">
     <header class="hero">
       <div class="hero__names">
         <p class="hero__kicker">Z-blockMap</p>
@@ -174,6 +174,7 @@ onUnmounted(() => {
 
       <section class="stage" aria-label="Área de desenho">
         <MapCanvas
+          :key="theme"
           :grid="grid"
           :preview-cells="previewCells"
           :hover-block="hoverBlock"
@@ -220,6 +221,13 @@ onUnmounted(() => {
   height: 100%;
   max-height: 100%;
   overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.page--day {
+  background: #ffffff;
+  color: #1a1a1a;
 }
 
 .hero {
@@ -229,6 +237,8 @@ onUnmounted(() => {
   gap: 16px;
   padding: 10px 28px 4px;
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .hero__kicker {
@@ -291,6 +301,8 @@ onUnmounted(() => {
   background: var(--bg-panel);
   overflow-y: auto;
   min-height: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .rule {
@@ -303,6 +315,10 @@ onUnmounted(() => {
   min-height: 0;
   min-width: 0;
   height: 100%;
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
+  overflow: hidden;
 }
 
 .file {
