@@ -1,0 +1,9 @@
+{
+  "name": "z-blockmap",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix system-vue",
+    "build": "npm run build --prefix system-vue",
+    "preview": "npm run preview --prefix system-vue"
+  }
+}

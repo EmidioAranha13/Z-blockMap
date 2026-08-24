@@ -1,0 +1,107 @@
+/**
+ * Folha de estilos global do Z-blockMap.
+ *
+ * Dois temas: noite (fundo preto) e dia (fundo branco).
+ * O canvas usa as mesmas cores de fundo via THEME_CANVAS em palette.js.
+ *
+ * Importante: não colocar as cores da noite só em :root sem um seletor de
+ * tema dia mais específico. :root sempre casa com <html>, então o dia
+ * precisa ganhar na especificidade (html[data-theme='day']).
+ */
+
+:root {
+  --radius: 12px;
+  --font: "Segoe UI", "Trebuchet MS", sans-serif;
+  --mono: "Cascadia Mono", "Consolas", monospace;
+}
+
+html,
+html[data-theme='night'] {
+  color-scheme: dark;
+  --bg: #000000;
+  --bg-panel: #141414;
+  --bg-raised: #1c1c1c;
+  --bg-input: #0d0d0d;
+  --bg-status: #0a0a0a;
+  --ink: #ececec;
+  --ink-dim: #a3a3a3;
+  --brass: #c4a35a;
+  --brass-dim: #8d7540;
+  --line: rgba(255, 255, 255, 0.16);
+  --tool-on: #2a2a24;
+  --swatch-on: #f4e6c5;
+  --danger: #c45c4a;
+  --danger-text: #e8b4aa;
+}
+
+html[data-theme='day'] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-panel: #f4f4f4;
+  --bg-raised: #ffffff;
+  --bg-input: #ffffff;
+  --bg-status: #f0f0f0;
+  --ink: #1a1a1a;
+  --ink-dim: #5c5c5c;
+  --brass: #8a6a28;
+  --brass-dim: #7a6240;
+  --line: rgba(0, 0, 0, 0.14);
+  --tool-on: #f3ead2;
+  --swatch-on: #333333;
+  --danger: #b42318;
+  --danger-text: #9b1c1c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+}
+
+@supports (height: 100dvh) {
+  html,
+  body,
+  #app {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+}
+
+body {
+  user-select: none;
+}
+
+button,
+input {
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+input,
+textarea {
+  user-select: text;
+}

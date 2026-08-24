@@ -1,0 +1,14 @@
+# Dependências e build
+node_modules
+dist
+.vite
+
+# Logs e cache
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Ambiente local
+.env
+.env.local
