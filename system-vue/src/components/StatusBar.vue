@@ -2,7 +2,7 @@
 /**
  * StatusBar.vue
  *
- * Faixa inferior: escala, ferramenta, bloco, zoom e recado de arquivo.
+ * Faixa inferior: escala, ferramenta, bloco, zoom, LOD e recado de arquivo.
  */
 defineProps({
   width: { type: Number, required: true },
@@ -12,6 +12,8 @@ defineProps({
   hoverBlock: { type: Object, default: null },
   isDrawing: { type: Boolean, default: false },
   zoom: { type: Number, default: 1 },
+  /** Fator visual N×N (1 = cada célula da matriz). */
+  lod: { type: Number, default: 1 },
   fileMessage: { type: String, default: '' },
   mapName: { type: String, default: '' },
 })
@@ -29,6 +31,10 @@ defineProps({
     <span v-else>fora da grade</span>
     <span class="dot" aria-hidden="true">·</span>
     <span>zoom {{ Math.round(zoom * 100) }}%</span>
+    <template v-if="lod > 1">
+      <span class="dot" aria-hidden="true">·</span>
+      <span>LOD {{ lod }}×{{ lod }}</span>
+    </template>
     <span v-if="fileMessage" class="msg">{{ fileMessage }}</span>
     <span class="hint">{{ toolHint }}</span>
   </footer>

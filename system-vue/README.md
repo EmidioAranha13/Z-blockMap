@@ -17,7 +17,7 @@ Feito com **Vue 3**, **Vite**, **Canvas 2D** e a roda de cores **iro.js**.
 - **Camadas e grupos** (olho para visibilidade; movimento com a ferramenta Mover / `V`).
 - Nome do mapa no topo: usado na tela e no nome dos arquivos salvos.
 - **Undo / Redo** (fila de até 50 ações; a mais antiga sai quando enche).
-- **Modo dia** (fundo branco) e **modo noite** (fundo preto).
+- Fundo preto.
 - Zoom com **+ / −** (canto inferior direito) e com o **scroll** (centro no cursor).
 - Mover o mapa com o **botão direito** pressionado.
 - **Salvar / carregar** arquivo `.zblockmap.json` (mapa + histórico de cores).
@@ -86,7 +86,7 @@ http://localhost:5173
 src/
 ├── main.js
 ├── App.vue
-├── styles/main.css              # Temas dia / noite
+├── styles/main.css              # Cores da interface
 ├── pages/MapEditorPage.vue      # Layout da tela
 ├── components/
 │   ├── ScalePanel.vue           # Escala X × Y
@@ -96,8 +96,7 @@ src/
 │   ├── MapCanvas.vue            # Canvas, zoom, pan, eixos
 │   └── StatusBar.vue
 ├── composables/
-│   ├── useMapEditor.js          # Grade, cores, undo/redo, save
-│   └── useTheme.js              # Dia / noite
+│   └── useMapEditor.js          # Grade, cores, undo/redo, save
 ├── constants/
 │   ├── limits.js                # 500×500, histórico 50, zoom
 │   ├── tools.js
@@ -113,7 +112,7 @@ src/
     └── download.js
 ```
 
-A grade é `grid[y][x]` (Y = linha, X = coluna). `0` = vazio (branco de dia, preto de noite). Os demais valores são ids de cor da paleta combinada.
+A grade é `grid[y][x]` (Y = linha, X = coluna). `0` = vazio (preto). Os demais valores são ids de cor da paleta combinada.
 
 ---
 

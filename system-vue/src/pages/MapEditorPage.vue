@@ -68,9 +68,9 @@ const {
   handleKeydown,
 } = useMapEditor()
 
-const { theme, toggleTheme } = useTheme()
-
+const { theme, setTheme } = useTheme()
 const zoom = ref(1)
+const lod = ref(1)
 const fileInput = ref(null)
 
 const clampStroke = computed(
@@ -102,7 +102,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="page" :class="{ 'page--day': theme === 'day' }">
+  <div class="page">
     <header class="hero">
       <div class="hero__names">
         <p class="hero__kicker">Z-blockMap</p>
@@ -111,14 +111,26 @@ onUnmounted(() => {
           <input v-model="mapName" type="text" maxlength="80" placeholder="Nome do mapa" />
         </label>
       </div>
-      <button
-        type="button"
-        class="theme"
-        :title="theme === 'night' ? 'Mudar para modo dia' : 'Mudar para modo noite'"
-        @click="toggleTheme"
-      >
-        {{ theme === 'night' ? 'Modo dia' : 'Modo noite' }}
-      </button>
+      <div class="theme-switch" role="group" aria-label="Tema">
+        <button
+          type="button"
+          class="theme-btn"
+          :class="{ 'theme-btn--on': theme === 'dark' }"
+          title="Fundo preto, blocos vazios pretos"
+          @click="setTheme('dark')"
+        >
+          Modo noturno
+        </button>
+        <button
+          type="button"
+          class="theme-btn"
+          :class="{ 'theme-btn--on': theme === 'light' }"
+          title="Fundo claro, blocos vazios brancos"
+          @click="setTheme('light')"
+        >
+          Modo ensolarado
+        </button>
+      </div>
     </header>
 
     <div class="layout">
@@ -174,20 +186,20 @@ onUnmounted(() => {
 
       <section class="stage" aria-label="Área de desenho">
         <MapCanvas
-          :key="theme"
           :grid="grid"
           :preview-cells="previewCells"
           :hover-block="hoverBlock"
           :colors="allColors"
-          :theme="theme"
           :active-tool="activeTool"
           :brush-size="activeTool === TOOLS.FILL ? 1 : brushSize"
           :clamp-stroke="clampStroke"
+          :theme="theme"
           @hover="setHover"
           @stroke-start="beginStroke"
           @stroke-move="continueStroke"
           @stroke-end="endStroke"
           @zoom-change="zoom = $event"
+          @lod-change="lod = $event"
         />
       </section>
     </div>
@@ -201,6 +213,7 @@ onUnmounted(() => {
       :hover-block="hoverBlock"
       :is-drawing="isDrawing"
       :zoom="zoom"
+      :lod="lod"
       :file-message="fileMessage"
     />
 
@@ -223,11 +236,6 @@ onUnmounted(() => {
   overflow: hidden;
   background: var(--bg);
   color: var(--ink);
-}
-
-.page--day {
-  background: #ffffff;
-  color: #1a1a1a;
 }
 
 .hero {
@@ -266,22 +274,44 @@ onUnmounted(() => {
   border-bottom-color: var(--brass);
 }
 
+.theme-switch {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.theme-btn {
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  background: var(--bg-panel);
+  color: var(--ink-dim);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.theme-btn + .theme-btn {
+  border-left: 1px solid var(--line);
+}
+
+.theme-btn:hover {
+  color: var(--ink);
+}
+
+.theme-btn--on {
+  background: var(--tool-on);
+  color: var(--ink);
+}
+
 .sr {
   position: absolute;
   width: 1px;
   height: 1px;
   overflow: hidden;
   clip: rect(0 0 0 0);
-}
-
-.theme {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 8px 14px;
-  background: var(--bg-raised);
-  color: var(--ink);
-  font-weight: 600;
-  white-space: nowrap;
 }
 
 .layout {

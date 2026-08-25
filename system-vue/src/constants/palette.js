@@ -1,8 +1,8 @@
 /**
- * Paleta fixa e cores de desenho ligadas ao tema (dia / noite).
+ * Paleta fixa e cores de desenho.
  *
- * O id 0 é sempre "vazio" (borracha). No canvas ele não usa o hex da paleta:
- * no dia o bloco vazio é branco; à noite, preto.
+ * O id 0 é sempre "vazio" (borracha). No canvas: preto no tema dark,
+ * branco no tema light.
  */
 export const FIXED_COLORS = [
   { id: 0, name: 'Vazio', hex: '#808080' },
@@ -16,10 +16,9 @@ export const FIXED_COLORS = [
 
 /**
  * Aparência do canvas em cada tema.
- * background/empty seguem o pedido: branco de dia, preto de noite.
  */
 export const THEME_CANVAS = {
-  night: {
+  dark: {
     background: '#000000',
     empty: '#000000',
     grid: 'rgba(230, 230, 230, 0.62)',
@@ -31,8 +30,8 @@ export const THEME_CANVAS = {
     previewStroke: 'rgba(244, 214, 176, 0.9)',
     label: '#d8d8d8',
   },
-  day: {
-    background: '#ffffff',
+  light: {
+    background: '#f6f3ea',
     empty: '#ffffff',
     grid: 'rgba(40, 40, 40, 0.22)',
     axisX: '#c62828',
@@ -96,14 +95,15 @@ export function findColor(colors, colorId) {
  *
  * @param {Array<{ id: number, hex: string }>} colors
  * @param {number} colorId
- * @param {'day' | 'night'} theme
+ * @param {'dark' | 'light'} [theme='dark']
  * @returns {string}
  */
-export function getCellHex(colors, colorId, theme) {
-  if (colorId === 0) return THEME_CANVAS[theme].empty
+export function getCellHex(colors, colorId, theme = 'dark') {
+  const skin = THEME_CANVAS[theme] ?? THEME_CANVAS.dark
+  if (colorId === 0) return skin.empty
   const found = findColor(colors, colorId)
   if (found) return found.hex
-  return THEME_CANVAS[theme].empty
+  return skin.empty
 }
 
 /**

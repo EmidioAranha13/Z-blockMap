@@ -164,11 +164,7 @@ const emit = defineEmits({
   width: 18px;
   height: 18px;
   object-fit: contain;
-  filter: brightness(0) invert(1);
-}
-
-:global(html[data-theme='day']) .tool__icon {
-  filter: brightness(0);
+  filter: var(--icon-filter);
 }
 
 .tool__name {

@@ -139,14 +139,14 @@ export function measureLegendHeight(ctx, items, maxWidth) {
  * @param {number} options.x
  * @param {number} options.y
  * @param {number} options.maxWidth
- * @param {'day' | 'night'} options.theme
+ * @param {'dark' | 'light'} [options.theme]
  */
 export function drawLegend(ctx, options) {
-  const { items, x, y, maxWidth, theme } = options
+  const { items, x, y, maxWidth, theme = 'dark' } = options
   if (items.length === 0) return
 
   const metrics = legendMetrics(maxWidth)
-  const skin = THEME_CANVAS[theme] ?? THEME_CANVAS.night
+  const skin = THEME_CANVAS[theme] ?? THEME_CANVAS.dark
   const rows = layoutRows(ctx, items, maxWidth, metrics)
   let cursorY = y
 

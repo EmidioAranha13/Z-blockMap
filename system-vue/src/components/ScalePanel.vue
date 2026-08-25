@@ -157,20 +157,19 @@ function onChange(axis, event) {
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #1c1c1c;
+  background: var(--bg-raised);
 }
 
 .lock--on {
   border-color: var(--brass);
-  background: #2a2a24;
+  background: var(--tool-on);
 }
 
 .lock__icon {
   width: 22px;
   height: 22px;
   object-fit: contain;
-  /* Força o desenho do PNG para branco, independente da cor original. */
-  filter: brightness(0) invert(1);
+  filter: var(--icon-filter);
 }
 
 .apply {

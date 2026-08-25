@@ -569,7 +569,10 @@ export function useMapEditor() {
     }
   }
 
-  function savePng(theme) {
+  /**
+   * @param {'dark' | 'light'} [theme='dark']
+   */
+  function savePng(theme = 'dark') {
     const canvas = renderMapToCanvas({
       grid: grid.value,
       colors: allColors.value,

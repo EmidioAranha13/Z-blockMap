@@ -1,49 +1,53 @@
 /**
  * Folha de estilos global do Z-blockMap.
  *
- * Dois temas via classe no <html>: theme-night e theme-day.
- * Não alterar color-scheme no documento: no Chromium isso pode
- * transformar o <canvas> numa camada preta em tela cheia.
+ * Dois temas: dark (noturno) e light (ensolarado).
+ * O color-scheme do documento permanece dark para o Edge não inverter
+ * a página. Só as variáveis de cor mudam.
  */
 
+:root,
+html.theme-dark {
+  --bg: #000000; /* Página inteira, área do canvas e fundo atrás do mapa. */
+  --bg-panel: #141414; /* Barra lateral, botões de zoom e botões de tema. */
+  --bg-raised: #1c1c1c; /* Botões da toolbar, cadeado da escala e extras da paleta. */
+  --bg-input: #0d0d0d; /* Campos (escala, nome, hex) e fundo das teclas de atalho. */
+  --bg-status: #0a0a0a; /* Barra de status no rodapé. */
+  --ink: #ececec; /* Texto principal: títulos, inputs, botões. */
+  --ink-dim: #a3a3a3; /* Texto secundário: labels, dicas, atalhos, status. */
+  --brass: #c4a35a; /* Destaque: kicker Z-blockMap, títulos de seção, hover, botão Aplicar. */
+  --brass-dim: #8d7540; /* Destaque mais suave na barra de status. */
+  --line: rgba(255, 255, 255, 0.16); /* Bordas, divisórias e sublinhado do nome do mapa. */
+  --tool-on: #2a2a24; /* Item ativo: ferramenta, camada, tema e cadeado travado. */
+  --swatch-on: #f4e6c5; /* Contorno da cor selecionada na paleta. */
+  --danger: #c45c4a; /* Ações destrutivas (borda/fundo de Limpar, Remover). */
+  --danger-text: #e8b4aa; /* Texto desses botões de perigo. */
+  --icon-filter: brightness(0) invert(1); /* Ícones PNG (olho, tinta, cadeado): no dark viram brancos. */
+}
+
+html.theme-light {
+  --bg: #f6f3ea; /* Página inteira, área do canvas e fundo atrás do mapa. */
+  --bg-panel: #fffdf8; /* Barra lateral, botões de zoom e botões de tema. */
+  --bg-raised: #ffffff; /* Botões da toolbar, cadeado da escala e extras da paleta. */
+  --bg-input: #ffffff; /* Campos (escala, nome, hex) e fundo das teclas de atalho. */
+  --bg-status: #efebe3; /* Barra de status no rodapé. */
+  --ink: #1a1a1a; /* Texto principal: títulos, inputs, botões. */
+  --ink-dim: #5c5c5c; /* Texto secundário: labels, dicas, atalhos, status. */
+  --brass: #8a6a28; /* Destaque: kicker Z-blockMap, títulos de seção, hover, botão Aplicar. */
+  --brass-dim: #7a6240; /* Destaque mais suave na barra de status. */
+  --line: rgba(0, 0, 0, 0.14); /* Bordas, divisórias e sublinhado do nome do mapa. */
+  --tool-on: #f3ead2; /* Item ativo: ferramenta, camada, tema e cadeado travado. */
+  --swatch-on: #333333; /* Contorno da cor selecionada na paleta. */
+  --danger: #b42318; /* Ações destrutivas (borda/fundo de Limpar, Remover). */
+  --danger-text: #9b1c1c; /* Texto desses botões de perigo. */
+  --icon-filter: brightness(0); /* Ícones PNG (olho, tinta, cadeado): no light viram pretos. */
+}
+
 :root {
-  --radius: 12px;
-  --font: "Segoe UI", "Trebuchet MS", sans-serif;
-  --mono: "Cascadia Mono", "Consolas", monospace;
-}
-
-html.theme-night {
-  --bg: #000000;
-  --bg-panel: #141414;
-  --bg-raised: #1c1c1c;
-  --bg-input: #0d0d0d;
-  --bg-status: #0a0a0a;
-  --ink: #ececec;
-  --ink-dim: #a3a3a3;
-  --brass: #c4a35a;
-  --brass-dim: #8d7540;
-  --line: rgba(255, 255, 255, 0.16);
-  --tool-on: #2a2a24;
-  --swatch-on: #f4e6c5;
-  --danger: #c45c4a;
-  --danger-text: #e8b4aa;
-}
-
-html.theme-day {
-  --bg: #ffffff;
-  --bg-panel: #f4f4f4;
-  --bg-raised: #ffffff;
-  --bg-input: #ffffff;
-  --bg-status: #f0f0f0;
-  --ink: #1a1a1a;
-  --ink-dim: #5c5c5c;
-  --brass: #8a6a28;
-  --brass-dim: #7a6240;
-  --line: rgba(0, 0, 0, 0.14);
-  --tool-on: #f3ead2;
-  --swatch-on: #333333;
-  --danger: #b42318;
-  --danger-text: #9b1c1c;
+  color-scheme: dark;
+  --radius: 12px; /* Cantos arredondados da barra lateral. */
+  --font: "Segoe UI", "Trebuchet MS", sans-serif; /* Fonte da interface. */
+  --mono: "Cascadia Mono", "Consolas", monospace; /* Fonte de números, hex e barra de status. */
 }
 
 * {
@@ -57,24 +61,9 @@ body,
   height: 100%;
   max-height: 100%;
   overflow: hidden;
-  background-color: var(--bg);
+  background: var(--bg);
   color: var(--ink);
   font-family: var(--font);
-  forced-color-adjust: none;
-}
-
-html.theme-night,
-html.theme-night body,
-html.theme-night #app {
-  background-color: #000000;
-  color: #ececec;
-}
-
-html.theme-day,
-html.theme-day body,
-html.theme-day #app {
-  background-color: #ffffff;
-  color: #1a1a1a;
 }
 
 @supports (height: 100dvh) {

@@ -111,11 +111,7 @@ export default {
   width: 16px;
   height: 16px;
   object-fit: contain;
-  filter: brightness(0) invert(1);
-}
-
-:global(html[data-theme='day']) .eye__icon {
-  filter: brightness(0);
+  filter: var(--icon-filter);
 }
 
 .name {

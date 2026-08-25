@@ -14,8 +14,10 @@ export const MIN_ZOOM = 0.05
 export const MAX_ZOOM = 64
 
 /**
- * Tamanho mínimo de um bloco (px) para as linhas da grade continuarem visíveis.
- * Abaixo disso o canvas encolhia as células e a grade era omitida (~140×140+).
+ * Tamanho mínimo de um bloco visível (px).
+ * Na câmera, o zoom 1 não encolhe abaixo disso (o mapa transborda).
+ * No desenho, se a célula projetada ficar menor, o LOD agrupa vizinhas
+ * até o bloco na tela voltar a ter pelo menos este tamanho.
  */
 export const MIN_CELL_FOR_GRID = 6
 

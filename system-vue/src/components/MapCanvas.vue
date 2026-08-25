@@ -11,6 +11,8 @@
  *
  * Pan: botão direito pressionado e arrastado.
  * Desenho: botão esquerdo (igual ao restante do editor).
+ * LOD: a malha agrupa linhas com zoom distante; o desenho é a matriz
+ * em menor resolução (não um bloco de uma cor só).
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import tintaIcon from '@/assets/tinta.png'
@@ -27,6 +29,7 @@ import {
 } from '@/utils/coords.js'
 import { drawMap } from '@/utils/drawMap.js'
 import { makeIconCursor } from '@/utils/iconCursor.js'
+import { lodFactor } from '@/utils/lod.js'
 
 const props = defineProps({
   grid: { type: Array, required: true },
@@ -34,10 +37,11 @@ const props = defineProps({
   hoverBlock: { type: Object, default: null },
   brushSize: { type: Number, default: 1 },
   colors: { type: Array, required: true },
-  theme: { type: String, default: 'night' },
   activeTool: { type: String, default: 'pencil' },
   /** Se verdadeiro, o arrasto de forma/mover prende nas bordas do cartesiano. */
   clampStroke: { type: Boolean, default: false },
+  /** Tema do canvas: dark (noturno) ou light (ensolarado). */
+  theme: { type: String, default: 'dark' },
 })
 
 const emit = defineEmits({
@@ -46,6 +50,7 @@ const emit = defineEmits({
   'stroke-move': null,
   'stroke-end': null,
   'zoom-change': (value) => typeof value === 'number',
+  'lod-change': (value) => typeof value === 'number',
 })
 
 const wrapRef = ref(null)
@@ -56,7 +61,8 @@ const origin = ref({ x: 0, y: 0 })
 /** True enquanto o botão direito está arrastando o mapa. */
 const isPanning = ref(false)
 const canvasCursor = ref('crosshair')
-const fillCursorCache = { night: '', day: '' }
+/** Cursor da tinta, um por tema (invertido no dark). */
+const fillCursorByTheme = { dark: '', light: '' }
 
 const cols = computed(() => (props.grid[0] ? props.grid[0].length : 0))
 const rows = computed(() => props.grid.length)
@@ -85,6 +91,9 @@ const minZoom = computed(() => {
 /** Tamanho real do bloco com o zoom aplicado. */
 const cellSize = computed(() => baseCellSize.value * zoom.value)
 
+/** Agrupamento visual N×N; 1 = cada célula da matriz. */
+const lod = computed(() => lodFactor(cellSize.value))
+
 let resizeObserver = null
 let panLast = { x: 0, y: 0 }
 
@@ -102,6 +111,7 @@ function resetCamera() {
     baseCellSize.value,
   )
   emit('zoom-change', zoom.value)
+  emit('lod-change', lod.value)
 }
 
 /**
@@ -137,6 +147,7 @@ function applyZoomAt(nextZoom, canvasX, canvasY) {
     baseCellSize.value * zoom.value,
   )
   emit('zoom-change', zoom.value)
+  emit('lod-change', lod.value)
   draw()
 }
 
@@ -166,6 +177,7 @@ function draw() {
 
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  emit('lod-change', lod.value)
   drawMap(ctx, {
     grid: props.grid,
     colors: props.colors,
@@ -177,7 +189,8 @@ function draw() {
     cellSize: cellSize.value,
     viewWidth: cssW,
     viewHeight: cssH,
-    theme: props.theme,
+    theme: props.theme === 'light' ? 'light' : 'dark',
+    pixelRatio: dpr,
   })
 }
 
@@ -308,7 +321,7 @@ watch(
 )
 
 watch(
-  () => [props.activeTool, props.theme, isPanning.value],
+  () => [props.activeTool, isPanning.value, props.theme],
   async () => {
     if (isPanning.value) {
       canvasCursor.value = 'grabbing'
@@ -318,14 +331,12 @@ watch(
       canvasCursor.value = 'crosshair'
       return
     }
-    const themeKey = props.theme === 'day' ? 'day' : 'night'
-    if (!fillCursorCache[themeKey]) {
-      fillCursorCache[themeKey] = await makeIconCursor(tintaIcon, {
-        invert: themeKey === 'night',
-      })
+    const key = props.theme === 'light' ? 'light' : 'dark'
+    if (!fillCursorByTheme[key]) {
+      fillCursorByTheme[key] = await makeIconCursor(tintaIcon, { invert: key === 'dark' })
     }
     if (props.activeTool === TOOLS.FILL && !isPanning.value) {
-      canvasCursor.value = fillCursorCache[themeKey]
+      canvasCursor.value = fillCursorByTheme[key]
     }
   },
   { immediate: true },
@@ -333,7 +344,7 @@ watch(
 </script>
 
 <template>
-  <div ref="wrapRef" class="map-wrap" :class="{ 'map-wrap--day': theme === 'day' }">
+  <div ref="wrapRef" class="map-wrap">
     <canvas
       ref="canvasRef"
       class="map-canvas"
@@ -362,13 +373,9 @@ watch(
   min-height: 0;
   overflow: hidden;
   border-radius: 14px;
-  background: #000;
+  background: var(--bg);
   box-shadow: inset 0 0 0 1px var(--line);
   touch-action: none;
-}
-
-.map-wrap--day {
-  background: #fff;
 }
 
 .map-canvas {

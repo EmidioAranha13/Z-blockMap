@@ -1,11 +1,13 @@
 /**
  * Desenho compartilhado do mapa (tela ao vivo e exportação PNG).
  *
- * Mapas grandes (até 500×500) pintam os blocos visíveis via ImageData
- * (1 pixel por bloco, depois escala sem smoothing). Grade e eixos
- * cartesianos são traçados por cima.
+ * Conteúdo: cada célula da matriz vira 1 pixel numa bitmap, depois essa
+ * imagem é escalada para a tela (nearest se a célula ≥ 1 px; downsample
+ * estilo pixel art se várias células caem no mesmo pixel).
+ * Grade: com zoom distante as linhas acompanham o LOD (N×N), por cima.
+ * A matriz nunca é alterada.
  */
-import { getCellHex, hexToRgb, THEME_CANVAS } from '@/constants/palette.js'
+import { THEME_CANVAS } from '@/constants/palette.js'
 import {
   collectUsedColors,
   drawLegend,
@@ -13,6 +15,7 @@ import {
   LEGEND_PAD,
   measureLegendHeight,
 } from '@/utils/legend.js'
+import { cellsToLodRects, downsampleBoxRgb, lodFactor, makeRgbLookup } from '@/utils/lod.js'
 import { clipCells, expandBrush } from '@/utils/shapes.js'
 
 /**
@@ -30,11 +33,12 @@ import { clipCells, expandBrush } from '@/utils/shapes.js'
  * @param {number} options.cellSize Tamanho de um bloco em pixels
  * @param {number} options.viewWidth
  * @param {number} options.viewHeight
- * @param {'day' | 'night'} options.theme
  * @param {boolean} [options.showPreview]
  * @param {boolean} [options.showHover]
  * @param {boolean} [options.showGrid]
  * @param {boolean} [options.showAxes]
+ * @param {'dark' | 'light'} [options.theme]
+ * @param {number} [options.pixelRatio] devicePixelRatio, para o downsample
  */
 export function drawMap(ctx, options) {
   const {
@@ -48,16 +52,18 @@ export function drawMap(ctx, options) {
     cellSize,
     viewWidth,
     viewHeight,
-    theme,
     showPreview = true,
     showHover = true,
     showGrid = true,
     showAxes = true,
+    theme = 'dark',
+    pixelRatio = 1,
   } = options
 
   const rows = grid.length
   const cols = rows > 0 ? grid[0].length : 0
-  const skin = THEME_CANVAS[theme] ?? THEME_CANVAS.night
+  const skin = THEME_CANVAS[theme] ?? THEME_CANVAS.dark
+  const lod = lodFactor(cellSize)
 
   ctx.save()
   ctx.fillStyle = skin.background
@@ -76,36 +82,63 @@ export function drawMap(ctx, options) {
   const visH = Math.max(0, endY - startY)
 
   if (visW > 0 && visH > 0) {
-    paintCells(ctx, grid, colors, theme, startX, startY, visW, visH, originX, originY, cellSize)
+    paintCells(
+      ctx,
+      grid,
+      colors,
+      startX,
+      startY,
+      visW,
+      visH,
+      originX,
+      originY,
+      cellSize,
+      theme,
+      cols,
+      rows,
+      pixelRatio,
+    )
   }
 
   if (showPreview && previewCells.length > 0) {
+    const previewRects = cellsToLodRects(previewCells, lod, cols, rows)
     ctx.fillStyle = skin.previewFill
-    for (const cell of previewCells) {
-      ctx.fillRect(originX + cell.x * cellSize, originY + cell.y * cellSize, cellSize, cellSize)
+    for (const rect of previewRects) {
+      ctx.fillRect(
+        originX + rect.x * cellSize,
+        originY + rect.y * cellSize,
+        rect.w * cellSize,
+        rect.h * cellSize,
+      )
     }
     ctx.strokeStyle = skin.previewStroke
-    ctx.lineWidth = Math.max(1, cellSize * 0.08)
-    for (const cell of previewCells) {
+    ctx.lineWidth = Math.max(1, cellSize * lod * 0.08)
+    for (const rect of previewRects) {
       ctx.strokeRect(
-        originX + cell.x * cellSize + 0.5,
-        originY + cell.y * cellSize + 0.5,
-        cellSize - 1,
-        cellSize - 1,
+        originX + rect.x * cellSize + 0.5,
+        originY + rect.y * cellSize + 0.5,
+        rect.w * cellSize - 1,
+        rect.h * cellSize - 1,
       )
     }
   }
 
   if (showHover && hoverBlock) {
     const hoverCells = clipCells(expandBrush([hoverBlock], brushSize), cols, rows)
+    const hoverRects = cellsToLodRects(hoverCells, lod, cols, rows)
     ctx.fillStyle = skin.hover
-    for (const cell of hoverCells) {
-      ctx.fillRect(originX + cell.x * cellSize, originY + cell.y * cellSize, cellSize, cellSize)
+    for (const rect of hoverRects) {
+      ctx.fillRect(
+        originX + rect.x * cellSize,
+        originY + rect.y * cellSize,
+        rect.w * cellSize,
+        rect.h * cellSize,
+      )
     }
   }
 
-  if (showGrid && cellSize >= 3) {
-    drawGridLines(ctx, originX, originY, cellSize, cols, rows, startX, startY, endX, endY, skin.grid)
+  if (showGrid && lod * cellSize >= 3) {
+    drawGridLines(ctx, originX, originY, cellSize, cols, rows, startX, startY, endX, endY, skin.grid, lod)
   }
 
   if (showAxes) {
@@ -116,18 +149,80 @@ export function drawMap(ctx, options) {
 }
 
 /**
- * Pinta os blocos visíveis: 1 pixel por célula, depois escala.
+ * Pinta o conteúdo visível a partir da matriz 1:1.
+ * Se cada célula ocupa ≥ 1 px no dispositivo, nearest-neighbor (cor original).
+ * Se várias células caem no mesmo pixel físico, downsample que ignora o vazio
+ * quando há tinta (linhas finas não somem).
  * @param {CanvasRenderingContext2D} ctx
  */
-function paintCells(ctx, grid, colors, theme, startX, startY, visW, visH, originX, originY, cellSize) {
+function paintCells(
+  ctx,
+  grid,
+  colors,
+  startX,
+  startY,
+  visW,
+  visH,
+  originX,
+  originY,
+  cellSize,
+  theme,
+  cols,
+  rows,
+  pixelRatio,
+) {
+  const rgbOf = makeRgbLookup(colors, theme)
+  const dpr = Math.max(1, pixelRatio)
+  const destX = originX + startX * cellSize
+  const destY = originY + startY * cellSize
+  const destWcss = visW * cellSize
+  const destHcss = visH * cellSize
+  const destDevW = Math.max(1, Math.round(destWcss * dpr))
+  const destDevH = Math.max(1, Math.round(destHcss * dpr))
+
+  let image
+  if (destDevW >= visW && destDevH >= visH) {
+    image = paintFullRes(ctx, grid, startX, startY, visW, visH, rgbOf)
+  } else {
+    image = paintMinified(
+      ctx,
+      grid,
+      startX,
+      startY,
+      visW,
+      visH,
+      Math.min(visW, destDevW),
+      Math.min(visH, destDevH),
+      rgbOf,
+      cols,
+      rows,
+    )
+  }
+
+  const scratch = getScratchCanvas(image.width, image.height)
+  scratch.ctx.putImageData(image, 0, 0)
+
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.beginPath()
+  ctx.rect(originX * dpr, originY * dpr, cols * cellSize * dpr, rows * cellSize * dpr)
+  ctx.clip()
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(scratch.canvas, destX * dpr, destY * dpr, destWcss * dpr, destHcss * dpr)
+  ctx.restore()
+}
+
+/**
+ * 1 pixel por célula, cores originais.
+ * @param {CanvasRenderingContext2D} ctx
+ */
+function paintFullRes(ctx, grid, startX, startY, visW, visH, rgbOf) {
   const image = ctx.createImageData(visW, visH)
   const data = image.data
-
   for (let y = 0; y < visH; y += 1) {
     const row = grid[startY + y]
     for (let x = 0; x < visW; x += 1) {
-      const hex = getCellHex(colors, row[startX + x], theme)
-      const { r, g, b } = hexToRgb(hex)
+      const { r, g, b } = rgbOf(row[startX + x])
       const i = (y * visW + x) * 4
       data[i] = r
       data[i + 1] = g
@@ -135,18 +230,33 @@ function paintCells(ctx, grid, colors, theme, startX, startY, visW, visH, origin
       data[i + 3] = 255
     }
   }
+  return image
+}
 
-  const scratch = getScratchCanvas(visW, visH)
-  scratch.ctx.putImageData(image, 0, 0)
+/**
+ * Reduz visW×visH células para destW×destH pixels de tela.
+ * @param {CanvasRenderingContext2D} ctx
+ */
+function paintMinified(ctx, grid, startX, startY, visW, visH, destW, destH, rgbOf, cols, rows) {
+  const image = ctx.createImageData(destW, destH)
+  const data = image.data
+  const paintedCounts = new Map()
 
-  ctx.imageSmoothingEnabled = false
-  ctx.drawImage(
-    scratch.canvas,
-    originX + startX * cellSize,
-    originY + startY * cellSize,
-    visW * cellSize,
-    visH * cellSize,
-  )
+  for (let py = 0; py < destH; py += 1) {
+    const y0 = Math.min(rows - 1, startY + Math.floor((py * visH) / destH))
+    const y1 = Math.min(rows, startY + Math.max(Math.floor((py * visH) / destH) + 1, Math.ceil(((py + 1) * visH) / destH)))
+    for (let px = 0; px < destW; px += 1) {
+      const x0 = Math.min(cols - 1, startX + Math.floor((px * visW) / destW))
+      const x1 = Math.min(cols, startX + Math.max(Math.floor((px * visW) / destW) + 1, Math.ceil(((px + 1) * visW) / destW)))
+      const { r, g, b } = downsampleBoxRgb(grid, x0, y0, Math.max(x0 + 1, x1), Math.max(y0 + 1, y1), rgbOf, paintedCounts)
+      const i = (py * destW + px) * 4
+      data[i] = r
+      data[i + 1] = g
+      data[i + 2] = b
+      data[i + 3] = 255
+    }
+  }
+  return image
 }
 
 /** Canvas auxiliar reutilizado entre frames (evita alocar 500×500 toda hora). */
@@ -170,8 +280,10 @@ function getScratchCanvas(width, height) {
 
 /**
  * Linhas da grade só na região visível.
+ * Com LOD > 1, traça as bordas dos grupos (não cada célula da matriz).
  */
-function drawGridLines(ctx, originX, originY, cellSize, cols, rows, startX, startY, endX, endY, color) {
+function drawGridLines(ctx, originX, originY, cellSize, cols, rows, startX, startY, endX, endY, color, lod) {
+  const step = Math.max(1, lod)
   ctx.strokeStyle = color
   ctx.lineWidth = 1
   ctx.beginPath()
@@ -181,16 +293,30 @@ function drawGridLines(ctx, originX, originY, cellSize, cols, rows, startX, star
   const left = originX + startX * cellSize
   const right = originX + Math.min(endX, cols) * cellSize
 
-  for (let x = startX; x <= endX && x <= cols; x += 1) {
+  const xFirst = Math.floor(startX / step) * step
+  for (let x = xFirst; x <= endX && x <= cols; x += step) {
     const px = originX + x * cellSize + 0.5
     ctx.moveTo(px, top)
     ctx.lineTo(px, bottom)
   }
-  for (let y = startY; y <= endY && y <= rows; y += 1) {
+  if (cols % step !== 0 && endX >= cols) {
+    const px = originX + cols * cellSize + 0.5
+    ctx.moveTo(px, top)
+    ctx.lineTo(px, bottom)
+  }
+
+  const yFirst = Math.floor(startY / step) * step
+  for (let y = yFirst; y <= endY && y <= rows; y += step) {
     const py = originY + y * cellSize + 0.5
     ctx.moveTo(left, py)
     ctx.lineTo(right, py)
   }
+  if (rows % step !== 0 && endY >= rows) {
+    const py = originY + rows * cellSize + 0.5
+    ctx.moveTo(left, py)
+    ctx.lineTo(right, py)
+  }
+
   ctx.stroke()
 }
 
@@ -266,10 +392,11 @@ function drawCartesianAxes(ctx, originX, originY, cellSize, cols, rows, skin) {
  * @param {object} options
  * @param {number[][]} options.grid
  * @param {Array<{ id: number, name: string, hex: string }>} options.colors
- * @param {'day' | 'night'} options.theme
+ * @param {'dark' | 'light'} [options.theme]
  * @returns {HTMLCanvasElement}
  */
 export function renderMapToCanvas(options) {
+  const theme = options.theme === 'light' ? 'light' : 'dark'
   const rows = options.grid.length
   const cols = rows > 0 ? options.grid[0].length : 1
   const maxPx = 4096
@@ -286,7 +413,7 @@ export function renderMapToCanvas(options) {
   canvas.width = mapW + LEGEND_PAD * 2
   canvas.height = mapH + LEGEND_PAD * 2 + gap + legendH
   const ctx = canvas.getContext('2d')
-  const skin = THEME_CANVAS[options.theme] ?? THEME_CANVAS.night
+  const skin = THEME_CANVAS[theme] ?? THEME_CANVAS.dark
 
   ctx.fillStyle = skin.background
   ctx.fillRect(0, 0, canvas.width, canvas.height)
@@ -301,11 +428,11 @@ export function renderMapToCanvas(options) {
     cellSize,
     viewWidth: mapW,
     viewHeight: mapH,
-    theme: options.theme,
     showPreview: false,
     showHover: false,
     showGrid: true,
     showAxes: true,
+    theme,
   })
   ctx.restore()
 
@@ -315,7 +442,7 @@ export function renderMapToCanvas(options) {
       x: LEGEND_PAD,
       y: LEGEND_PAD + mapH + gap,
       maxWidth: mapW,
-      theme: options.theme,
+      theme,
     })
   }
 
