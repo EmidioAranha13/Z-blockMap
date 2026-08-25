@@ -5,10 +5,11 @@
  * Ferramentas de desenho, paleta (fixas + roda) e ações de arquivo/histórico.
  */
 import ColorPalette from '@/components/ColorPalette.vue'
-import { TOOL_META } from '@/constants/tools.js'
+import { TOOLS, TOOL_META } from '@/constants/tools.js'
 import tintaIcon from '@/assets/tinta.png'
+import { ref } from 'vue'
 
-defineProps({
+const props = defineProps({
   activeTool: { type: String, required: true },
   fillShapes: { type: Boolean, required: true },
   selectedColor: { type: Number, required: true },
@@ -19,6 +20,8 @@ defineProps({
   canUndo: { type: Boolean, default: false },
   canRedo: { type: Boolean, default: false },
   brushSize: { type: Number, default: 1 },
+  mapWidth: { type: Number, required: true },
+  mapHeight: { type: Number, required: true },
 })
 
 const emit = defineEmits({
@@ -35,7 +38,29 @@ const emit = defineEmits({
   png: null,
   clear: null,
   'set-brush': (size) => typeof size === 'number',
+  'perfect-shape': null,
 })
+
+const showPerfectModal = ref(false)
+const perfectX = ref(1)
+const perfectY = ref(1)
+
+function openPerfectModal() {
+  perfectX.value = props.mapWidth
+  perfectY.value = props.mapHeight
+  showPerfectModal.value = true
+}
+
+function closePerfectModal() {
+  showPerfectModal.value = false
+}
+
+function confirmPerfectShape() {
+  const x = Math.min(props.mapWidth, Math.max(1, Math.floor(Number(perfectX.value)) || 1))
+  const y = Math.min(props.mapHeight, Math.max(1, Math.floor(Number(perfectY.value)) || 1))
+  emit('perfect-shape', { x, y })
+  closePerfectModal()
+}
 </script>
 
 <template>
@@ -43,21 +68,32 @@ const emit = defineEmits({
     <div>
       <span class="kicker">Ferramenta</span>
       <div class="tool-list">
-        <button
-          v-for="tool in TOOL_META"
-          :key="tool.id"
-          type="button"
-          class="tool"
-          :class="{ 'tool--on': activeTool === tool.id }"
-          :title="tool.hint"
-          @click="emit('set-tool', tool.id)"
-        >
-          <span class="tool__lead">
-            <img v-if="tool.icon === 'tinta'" class="tool__icon" :src="tintaIcon" alt="" />
-            <span class="tool__name">{{ tool.label }}</span>
-          </span>
-          <kbd>{{ tool.shortcut }}</kbd>
-        </button>
+        <template v-for="tool in TOOL_META" :key="tool.id">
+          <button
+            type="button"
+            class="tool"
+            :class="{ 'tool--on': activeTool === tool.id }"
+            :title="tool.hint"
+            @click="emit('set-tool', tool.id)"
+          >
+            <span class="tool__lead">
+              <img v-if="tool.icon === 'tinta'" class="tool__icon" :src="tintaIcon" alt="" />
+              <span class="tool__name">{{ tool.label }}</span>
+            </span>
+            <kbd>{{ tool.shortcut }}</kbd>
+          </button>
+          <button
+            v-if="tool.id === TOOLS.CIRCLE"
+            type="button"
+            class="tool"
+            title="Círculo ou elipse centrado na origem, com largura e altura em blocos"
+            @click="openPerfectModal"
+          >
+            <span class="tool__lead">
+              <span class="tool__name">Forma perfeita</span>
+            </span>
+          </button>
+        </template>
       </div>
     </div>
 
@@ -74,11 +110,10 @@ const emit = defineEmits({
       </select>
     </label>
 
-    <label class="fill" :class="{ 'fill--dim': activeTool !== 'circle' }">
+    <label class="fill">
       <input
         type="checkbox"
         :checked="fillShapes"
-        :disabled="activeTool !== 'circle'"
         @change="emit('update:fillShapes', $event.target.checked)"
       />
       Preencher forma
@@ -112,6 +147,49 @@ const emit = defineEmits({
       <button type="button" class="danger" @click="emit('clear')">Limpar mapa</button>
     </div>
   </section>
+
+  <Teleport to="body">
+    <div
+      v-if="showPerfectModal"
+      class="modal-back"
+      @click.self="closePerfectModal"
+      @keydown.escape="closePerfectModal"
+    >
+      <form class="modal" @submit.prevent="confirmPerfectShape" @keydown.escape="closePerfectModal">
+        <h3>Forma perfeita</h3>
+        <p>
+          Círculo ou elipse centrado na origem. X e Y são a largura e a altura
+          em blocos, no máximo a escala do mapa ({{ mapWidth }} × {{ mapHeight }}).
+        </p>
+        <div class="modal__fields">
+          <label>
+            <span>X — largura</span>
+            <input
+              v-model.number="perfectX"
+              type="number"
+              min="1"
+              :max="mapWidth"
+              required
+            />
+          </label>
+          <label>
+            <span>Y — altura</span>
+            <input
+              v-model.number="perfectY"
+              type="number"
+              min="1"
+              :max="mapHeight"
+              required
+            />
+          </label>
+        </div>
+        <div class="modal__actions">
+          <button type="button" class="ghost" @click="closePerfectModal">Cancelar</button>
+          <button type="submit" class="apply">Criar</button>
+        </div>
+      </form>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -233,5 +311,77 @@ kbd {
   border: 1px solid rgba(196, 92, 74, 0.45);
   background: transparent;
   color: var(--danger-text);
+}
+
+.modal-back {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.modal {
+  width: min(360px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--ink);
+}
+
+.modal h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.modal p {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--ink-dim);
+}
+
+.modal__fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.modal__fields label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--ink-dim);
+}
+
+.modal__fields input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 1rem;
+}
+
+.modal__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.apply {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--brass);
+  color: #1a150c;
+  font-weight: 700;
 }
 </style>

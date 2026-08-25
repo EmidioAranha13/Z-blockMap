@@ -156,6 +156,33 @@ export function getEllipseFilledCells(x0, y0, x1, y1) {
 }
 
 /**
+ * Caixa de uma elipse centrada na origem do cartesiano.
+ * sizeX e sizeY são a largura e a altura em blocos (já limitadas ao mapa).
+ *
+ * Sem eixo no bloco central: o eixo cai na linha floor(n/2); lados iguais
+ * quando o tamanho é par.
+ * Com eixo no bloco central (ímpar): o bloco do meio é o centro da forma.
+ *
+ * @param {number} cols
+ * @param {number} rows
+ * @param {number} sizeX
+ * @param {number} sizeY
+ * @param {boolean} centerCellAxes
+ * @returns {{ x0: number, y0: number, x1: number, y1: number }}
+ */
+export function originCenteredEllipseBox(cols, rows, sizeX, sizeY, centerCellAxes) {
+  const w = Math.min(cols, Math.max(1, Math.floor(Number(sizeX)) || 1))
+  const h = Math.min(rows, Math.max(1, Math.floor(Number(sizeY)) || 1))
+  const midX = Math.floor(cols / 2)
+  const midY = Math.floor(rows / 2)
+  const throughX = !!centerCellAxes && cols % 2 === 1
+  const throughY = !!centerCellAxes && rows % 2 === 1
+  const x0 = throughX ? midX - Math.floor((w - 1) / 2) : midX - Math.floor(w / 2)
+  const y0 = throughY ? midY - Math.floor((h - 1) / 2) : midY - Math.floor(h / 2)
+  return { x0, y0, x1: x0 + w - 1, y1: y0 + h - 1 }
+}
+
+/**
  * Expande cada bloco para um carimbo de size×size (1, 2 ou 3).
  * 1×1 e 2×2: o bloco clicado é o canto superior esquerdo.
  * 3×3: o bloco clicado é o centro (quinta célula).

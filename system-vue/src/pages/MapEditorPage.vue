@@ -2,7 +2,7 @@
 /**
  * MapEditorPage.vue
  *
- * Página do editor: escala, camadas, toolbar, canvas e status.
+ * Página do editor: drawer (nome, escala, camadas, toolbar), canvas e status.
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import EditorToolbar from '@/components/EditorToolbar.vue'
@@ -68,6 +68,7 @@ const {
   saveMapFile,
   loadMapFile,
   savePng,
+  stampPerfectShape,
   handleKeydown,
 } = useMapEditor()
 
@@ -75,6 +76,31 @@ const { theme, toggleTheme } = useTheme()
 const zoom = ref(1)
 const lod = ref(1)
 const fileInput = ref(null)
+const DRAWER_KEY = 'zblockmap-drawer-open'
+const drawerOpen = ref(readDrawerOpen())
+
+/**
+ * @returns {boolean}
+ */
+function readDrawerOpen() {
+  try {
+    const saved = localStorage.getItem(DRAWER_KEY)
+    if (saved === '0') return false
+    if (saved === '1') return true
+  } catch {
+    /* storage pode estar bloqueado */
+  }
+  return true
+}
+
+function toggleDrawer() {
+  drawerOpen.value = !drawerOpen.value
+  try {
+    localStorage.setItem(DRAWER_KEY, drawerOpen.value ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
 
 const clampStroke = computed(
   () => activeTool.value === TOOLS.LINE || activeTool.value === TOOLS.CIRCLE || activeTool.value === TOOLS.MOVE,
@@ -107,13 +133,7 @@ onUnmounted(() => {
 <template>
   <div class="page">
     <header class="hero">
-      <div class="hero__names">
-        <p class="hero__kicker">Z-blockMap</p>
-        <label class="map-name">
-          <span class="sr">Nome do mapa</span>
-          <input v-model="mapName" type="text" maxlength="80" placeholder="Nome do mapa" />
-        </label>
-      </div>
+      <p class="hero__kicker">Z-blockMap</p>
       <button
         type="button"
         class="theme-switch"
@@ -129,57 +149,79 @@ onUnmounted(() => {
       </button>
     </header>
 
-    <div class="layout">
-      <aside class="side">
-        <ScalePanel
-          v-model:scale-input="scaleInput"
-          v-model:locked="scaleLocked"
-          v-model:center-cell-axes="centerCellAxes"
-          :current-width="gridSize.width"
-          :current-height="gridSize.height"
-          @apply="applyScale"
-          @field="onScaleField($event.axis, $event.value)"
-        />
-        <hr class="rule" />
-        <LayerPanel
-          :tree="layerTree"
-          :active-id="activeNodeId"
-          @select="selectNode"
-          @toggle-visible="toggleNodeVisible"
-          @rename="renameNode($event.id, $event.name)"
-          @toggle-collapsed="toggleGroupCollapsed"
-          @add-layer="addLayer"
-          @add-group="addGroup"
-          @group="groupSelection"
-          @remove="deleteNode"
-          @shift="shiftNode"
-        />
-        <hr class="rule" />
-        <EditorToolbar
-          :active-tool="activeTool"
-          v-model:fill-shapes="fillShapes"
-          :selected-color="selectedColor"
-          :selected-color-info="selectedColorInfo"
-          :fixed-colors="fixedColors"
-          :recent-custom="recentCustom"
-          :extra-custom="extraCustom"
-          :can-undo="canUndo"
-          :can-redo="canRedo"
-          :brush-size="brushSize"
-          @set-tool="setTool"
-          @set-color="setColor"
-          @set-brush="setBrushSize"
-          @commit-color="commitWheelColor"
-          @rename="renameColor($event.id, $event.name)"
-          @recolor="recolor($event.id, $event.hex)"
-          @undo="undo"
-          @redo="redo"
-          @save="saveMapFile"
-          @load="openLoadDialog"
-          @png="savePng(theme)"
-          @clear="clearMap"
-        />
-      </aside>
+    <div class="workspace">
+      <div class="drawer" :class="{ 'drawer--closed': !drawerOpen }">
+        <aside class="side" id="editor-drawer">
+          <label class="map-name">
+            <span>Nome do mapa</span>
+            <input v-model="mapName" type="text" maxlength="80" placeholder="Nome do mapa" />
+          </label>
+          <hr class="rule" />
+          <ScalePanel
+            v-model:scale-input="scaleInput"
+            v-model:locked="scaleLocked"
+            v-model:center-cell-axes="centerCellAxes"
+            :current-width="gridSize.width"
+            :current-height="gridSize.height"
+            @apply="applyScale"
+            @field="onScaleField($event.axis, $event.value)"
+          />
+          <hr class="rule" />
+          <LayerPanel
+            :tree="layerTree"
+            :active-id="activeNodeId"
+            @select="selectNode"
+            @toggle-visible="toggleNodeVisible"
+            @rename="renameNode($event.id, $event.name)"
+            @toggle-collapsed="toggleGroupCollapsed"
+            @add-layer="addLayer"
+            @add-group="addGroup"
+            @group="groupSelection"
+            @remove="deleteNode"
+            @shift="shiftNode"
+          />
+          <hr class="rule" />
+          <EditorToolbar
+            :active-tool="activeTool"
+            v-model:fill-shapes="fillShapes"
+            :selected-color="selectedColor"
+            :selected-color-info="selectedColorInfo"
+            :fixed-colors="fixedColors"
+            :recent-custom="recentCustom"
+            :extra-custom="extraCustom"
+            :can-undo="canUndo"
+            :can-redo="canRedo"
+            :brush-size="brushSize"
+            :map-width="gridSize.width"
+            :map-height="gridSize.height"
+            @set-tool="setTool"
+            @set-color="setColor"
+            @set-brush="setBrushSize"
+            @commit-color="commitWheelColor"
+            @rename="renameColor($event.id, $event.name)"
+            @recolor="recolor($event.id, $event.hex)"
+            @undo="undo"
+            @redo="redo"
+            @save="saveMapFile"
+            @load="openLoadDialog"
+            @png="savePng(theme)"
+            @clear="clearMap"
+            @perfect-shape="stampPerfectShape($event.x, $event.y)"
+          />
+        </aside>
+        <button
+          type="button"
+          class="drawer-tab"
+          :aria-expanded="drawerOpen"
+          aria-controls="editor-drawer"
+          :title="drawerOpen ? 'Fechar painel' : 'Abrir painel'"
+          @click="toggleDrawer"
+        >
+          <svg class="drawer-tab__arrow" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M4 2 L8 6 L4 10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
 
       <section class="stage" aria-label="Área de desenho">
         <MapCanvas
@@ -241,35 +283,41 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 28px 4px;
+  padding: 10px 20px 6px;
   flex-shrink: 0;
   position: relative;
   z-index: 1;
 }
 
 .hero__kicker {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 0.72rem;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--brass);
 }
 
+.map-name {
+  display: grid;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--ink-dim);
+}
+
 .map-name input {
-  width: min(420px, 55vw);
-  padding: 6px 0;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  background: transparent;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-input);
   color: var(--ink);
-  font-size: 1.28rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 
 .map-name input:focus {
   outline: none;
-  border-bottom-color: var(--brass);
+  border-color: var(--brass);
 }
 
 .theme-switch {
@@ -298,33 +346,72 @@ onUnmounted(() => {
   filter: var(--icon-filter);
 }
 
-.sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
+.workspace {
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
-.layout {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  gap: 16px;
-  flex: 1;
-  padding: 8px 20px 12px;
-  min-height: 0;
+.drawer {
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: stretch;
+  pointer-events: none;
+  transition: transform 0.22s ease;
+}
+
+.drawer--closed {
+  transform: translateX(-280px);
 }
 
 .side {
+  width: 280px;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-left: 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
   background: var(--bg-panel);
   overflow-y: auto;
   min-height: 0;
-  position: relative;
-  z-index: 1;
+  pointer-events: auto;
+}
+
+.drawer--closed .side {
+  visibility: hidden;
+}
+
+.drawer-tab {
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  align-self: flex-start;
+  width: 28px;
+  height: 56px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
+  background: var(--bg-panel);
+  color: var(--ink);
+}
+
+.drawer-tab:hover {
+  color: var(--brass);
+}
+
+.drawer-tab__arrow {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.drawer:not(.drawer--closed) .drawer-tab__arrow {
+  transform: scaleX(-1);
 }
 
 .rule {
@@ -337,6 +424,7 @@ onUnmounted(() => {
   min-height: 0;
   min-width: 0;
   height: 100%;
+  padding: 8px 20px 12px;
   position: relative;
   z-index: 0;
   isolation: isolate;
@@ -345,12 +433,5 @@ onUnmounted(() => {
 
 .file {
   display: none;
-}
-
-@media (max-width: 860px) {
-  .layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 38vh) minmax(0, 1fr);
-  }
 }
 </style>

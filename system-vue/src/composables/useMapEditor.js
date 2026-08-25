@@ -28,7 +28,7 @@ import {
   resizeLayerTree,
   setTreeVisible,
 } from '@/utils/layers.js'
-import { expandBrush, getShapeCells } from '@/utils/shapes.js'
+import { clipCells, expandBrush, getEllipseFilledCells, getEllipseOutlineCells, getShapeCells, originCenteredEllipseBox } from '@/utils/shapes.js'
 
 const DEFAULT_WIDTH = 24
 const DEFAULT_HEIGHT = 16
@@ -415,6 +415,42 @@ export function useMapEditor() {
     moveBaseOffsets.value = []
   }
 
+  /**
+   * Elipse/círculo centrado na origem, com largura X e altura Y em blocos.
+   * @param {number} sizeX
+   * @param {number} sizeY
+   */
+  function stampPerfectShape(sizeX, sizeY) {
+    const layer = activeLayer.value
+    if (!layer) {
+      fileMessage.value = 'Selecione uma camada para desenhar.'
+      return
+    }
+
+    const box = originCenteredEllipseBox(
+      mapWidth.value,
+      mapHeight.value,
+      sizeX,
+      sizeY,
+      centerCellAxes.value,
+    )
+    const raw = fillShapes.value
+      ? getEllipseFilledCells(box.x0, box.y0, box.x1, box.y1)
+      : getEllipseOutlineCells(box.x0, box.y0, box.x1, box.y1)
+    const worlds = clipCells(raw, mapWidth.value, mapHeight.value)
+    if (worlds.length === 0) return
+
+    recordHistory()
+    const locals = []
+    for (const world of worlds) {
+      const local = toLocal(layer, world.x, world.y)
+      if (inBounds(layer.grid, local.x, local.y)) locals.push(local)
+    }
+    applyCells(layer.grid, locals, selectedColor.value)
+    bumpScene()
+    fileMessage.value = 'Forma perfeita criada.'
+  }
+
   function selectNode(id) {
     activeNodeId.value = id
   }
@@ -669,6 +705,7 @@ export function useMapEditor() {
     saveMapFile,
     loadMapFile,
     savePng,
+    stampPerfectShape,
     handleKeydown,
   }
 }
