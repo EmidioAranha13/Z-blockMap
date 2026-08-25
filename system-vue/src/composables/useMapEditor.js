@@ -42,6 +42,7 @@ export function useMapEditor() {
   const mapWidth = ref(DEFAULT_WIDTH)
   const mapHeight = ref(DEFAULT_HEIGHT)
   const scaleLocked = ref(false)
+  const centerCellAxes = ref(false)
   const scaleInput = reactive({
     x: DEFAULT_WIDTH,
     y: DEFAULT_HEIGHT,
@@ -179,6 +180,9 @@ export function useMapEditor() {
 
     scaleInput.x = width
     scaleInput.y = height
+    if (width % 2 === 0 || height % 2 === 0) {
+      centerCellAxes.value = false
+    }
     recordHistory()
     mapWidth.value = width
     mapHeight.value = height
@@ -528,6 +532,7 @@ export function useMapEditor() {
       customColors: customColors.value,
       selectedColor: selectedColor.value,
       scaleLocked: scaleLocked.value,
+      centerCellAxes: centerCellAxes.value,
       brushSize: brushSize.value,
     })
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -547,6 +552,7 @@ export function useMapEditor() {
       scaleInput.x = parsed.width
       scaleInput.y = parsed.height
       scaleLocked.value = parsed.scaleLocked
+      centerCellAxes.value = parsed.centerCellAxes
       brushSize.value = parsed.brushSize
       layerTree.value = parsed.layerTree
       const first = firstLayer(layerTree.value)
@@ -577,6 +583,7 @@ export function useMapEditor() {
       grid: grid.value,
       colors: allColors.value,
       theme,
+      centerCellAxes: centerCellAxes.value,
     })
     canvas.toBlob((blob) => {
       if (!blob) return
@@ -612,6 +619,7 @@ export function useMapEditor() {
     grid,
     scaleInput,
     scaleLocked,
+    centerCellAxes,
     activeTool,
     selectedColor,
     selectedColorInfo,

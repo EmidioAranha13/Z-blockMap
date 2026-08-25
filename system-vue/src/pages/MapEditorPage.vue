@@ -13,12 +13,15 @@ import StatusBar from '@/components/StatusBar.vue'
 import { TOOLS } from '@/constants/tools.js'
 import { useMapEditor } from '@/composables/useMapEditor.js'
 import { useTheme } from '@/composables/useTheme.js'
+import luaIcon from '@/assets/lua.png'
+import solIcon from '@/assets/sol.png'
 
 const {
   mapName,
   grid,
   scaleInput,
   scaleLocked,
+  centerCellAxes,
   activeTool,
   selectedColor,
   selectedColorInfo,
@@ -68,7 +71,7 @@ const {
   handleKeydown,
 } = useMapEditor()
 
-const { theme, setTheme } = useTheme()
+const { theme, toggleTheme } = useTheme()
 const zoom = ref(1)
 const lod = ref(1)
 const fileInput = ref(null)
@@ -111,26 +114,19 @@ onUnmounted(() => {
           <input v-model="mapName" type="text" maxlength="80" placeholder="Nome do mapa" />
         </label>
       </div>
-      <div class="theme-switch" role="group" aria-label="Tema">
-        <button
-          type="button"
-          class="theme-btn"
-          :class="{ 'theme-btn--on': theme === 'dark' }"
-          title="Fundo preto, blocos vazios pretos"
-          @click="setTheme('dark')"
-        >
-          Modo noturno
-        </button>
-        <button
-          type="button"
-          class="theme-btn"
-          :class="{ 'theme-btn--on': theme === 'light' }"
-          title="Fundo claro, blocos vazios brancos"
-          @click="setTheme('light')"
-        >
-          Modo ensolarado
-        </button>
-      </div>
+      <button
+        type="button"
+        class="theme-switch"
+        :title="theme === 'dark' ? 'Mudar para modo ensolarado' : 'Mudar para modo noturno'"
+        @click="toggleTheme"
+      >
+        <img
+          class="theme-switch__icon"
+          :src="theme === 'dark' ? luaIcon : solIcon"
+          alt=""
+        />
+        <span>{{ theme === 'dark' ? 'Noturno' : 'Ensolarado' }}</span>
+      </button>
     </header>
 
     <div class="layout">
@@ -138,6 +134,7 @@ onUnmounted(() => {
         <ScalePanel
           v-model:scale-input="scaleInput"
           v-model:locked="scaleLocked"
+          v-model:center-cell-axes="centerCellAxes"
           :current-width="gridSize.width"
           :current-height="gridSize.height"
           @apply="applyScale"
@@ -194,6 +191,7 @@ onUnmounted(() => {
           :brush-size="activeTool === TOOLS.FILL ? 1 : brushSize"
           :clamp-stroke="clampStroke"
           :theme="theme"
+          :center-cell-axes="centerCellAxes"
           @hover="setHover"
           @stroke-start="beginStroke"
           @stroke-move="continueStroke"
@@ -277,33 +275,27 @@ onUnmounted(() => {
 .theme-switch {
   display: flex;
   flex-shrink: 0;
-  gap: 0;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.theme-btn {
+  align-items: center;
+  gap: 8px;
   margin: 0;
-  padding: 8px 12px;
-  border: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
   background: var(--bg-panel);
-  color: var(--ink-dim);
+  color: var(--ink);
   font-size: 0.78rem;
   font-weight: 600;
 }
 
-.theme-btn + .theme-btn {
-  border-left: 1px solid var(--line);
+.theme-switch:hover {
+  border-color: var(--brass);
 }
 
-.theme-btn:hover {
-  color: var(--ink);
-}
-
-.theme-btn--on {
-  background: var(--tool-on);
-  color: var(--ink);
+.theme-switch__icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  filter: var(--icon-filter);
 }
 
 .sr {

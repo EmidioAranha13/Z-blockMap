@@ -15,6 +15,7 @@ import {
   LEGEND_PAD,
   measureLegendHeight,
 } from '@/utils/legend.js'
+import { cartesianAxisPixel } from '@/utils/coords.js'
 import { cellsToLodRects, downsampleBoxRgb, lodFactor, makeRgbLookup } from '@/utils/lod.js'
 import { clipCells, expandBrush } from '@/utils/shapes.js'
 
@@ -39,6 +40,7 @@ import { clipCells, expandBrush } from '@/utils/shapes.js'
  * @param {boolean} [options.showAxes]
  * @param {'dark' | 'light'} [options.theme]
  * @param {number} [options.pixelRatio] devicePixelRatio, para o downsample
+ * @param {boolean} [options.centerCellAxes] eixos pelo bloco central (só ímpar×ímpar)
  */
 export function drawMap(ctx, options) {
   const {
@@ -58,6 +60,7 @@ export function drawMap(ctx, options) {
     showAxes = true,
     theme = 'dark',
     pixelRatio = 1,
+    centerCellAxes = false,
   } = options
 
   const rows = grid.length
@@ -142,7 +145,7 @@ export function drawMap(ctx, options) {
   }
 
   if (showAxes) {
-    drawCartesianAxes(ctx, originX, originY, cellSize, cols, rows, skin)
+    drawCartesianAxes(ctx, originX, originY, cellSize, cols, rows, skin, centerCellAxes)
   }
 
   ctx.restore()
@@ -321,19 +324,16 @@ function drawGridLines(ctx, originX, originY, cellSize, cols, rows, startX, star
 }
 
 /**
- * Eixos cartesianos sobre a malha de blocos, sempre em uma linha da grade
- * (nunca no meio de um bloco). Em largura ímpar (ex.: 265) o corte fica
- * em floor(n/2): 132 blocos de um lado e 133 do outro, sem inventar célula.
- * O plano tem exatamente cols × rows; espaço extra na tela é só fundo,
- * não estica os eixos.
+ * Eixos cartesianos sobre a malha.
+ * Padrão: sobre uma linha da grade em floor(n/2) (ímpar: um lado ganha 1 bloco).
+ * centerCellAxes (ímpar×ímpar): pelo centro da coluna e da linha do meio.
  *
  * @param {CanvasRenderingContext2D} ctx
  */
-function drawCartesianAxes(ctx, originX, originY, cellSize, cols, rows, skin) {
-  const midX = Math.floor(cols / 2)
-  const midY = Math.floor(rows / 2)
-  const axisX = originX + midX * cellSize
-  const axisY = originY + midY * cellSize
+function drawCartesianAxes(ctx, originX, originY, cellSize, cols, rows, skin, centerCellAxes) {
+  const throughCenter = !!centerCellAxes && cols % 2 === 1 && rows % 2 === 1
+  const axisX = cartesianAxisPixel(cols, originX, cellSize, throughCenter)
+  const axisY = cartesianAxisPixel(rows, originY, cellSize, throughCenter)
   const left = originX
   const top = originY
   const right = originX + cols * cellSize
@@ -393,6 +393,7 @@ function drawCartesianAxes(ctx, originX, originY, cellSize, cols, rows, skin) {
  * @param {number[][]} options.grid
  * @param {Array<{ id: number, name: string, hex: string }>} options.colors
  * @param {'dark' | 'light'} [options.theme]
+ * @param {boolean} [options.centerCellAxes]
  * @returns {HTMLCanvasElement}
  */
 export function renderMapToCanvas(options) {
@@ -433,6 +434,7 @@ export function renderMapToCanvas(options) {
     showGrid: true,
     showAxes: true,
     theme,
+    centerCellAxes: !!options.centerCellAxes,
   })
   ctx.restore()
 

@@ -42,6 +42,8 @@ const props = defineProps({
   clampStroke: { type: Boolean, default: false },
   /** Tema do canvas: dark (noturno) ou light (ensolarado). */
   theme: { type: String, default: 'dark' },
+  /** Eixos pelo centro da coluna/linha do meio (só ímpar×ímpar). */
+  centerCellAxes: { type: Boolean, default: false },
 })
 
 const emit = defineEmits({
@@ -191,6 +193,7 @@ function draw() {
     viewHeight: cssH,
     theme: props.theme === 'light' ? 'light' : 'dark',
     pixelRatio: dpr,
+    centerCellAxes: props.centerCellAxes,
   })
 }
 
@@ -315,7 +318,7 @@ watch(
 )
 
 watch(
-  () => [props.grid, props.previewCells, props.hoverBlock, props.brushSize, props.colors, props.theme, viewSize.value],
+  () => [props.grid, props.previewCells, props.hoverBlock, props.brushSize, props.colors, props.theme, props.centerCellAxes, viewSize.value],
   draw,
   { deep: true },
 )

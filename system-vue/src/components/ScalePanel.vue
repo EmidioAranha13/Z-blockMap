@@ -3,14 +3,17 @@
  * ScalePanel.vue
  *
  * Escala X × Y. O cadeado (antes dos campos) força Y = X e desabilita Y.
+ * Abaixo de Criar mapa: eixo no bloco central, só em ímpar × ímpar.
  */
 import padlockLocked from '@/assets/padlock1.png'
 import padlockOpen from '@/assets/padlock2.png'
+import { computed } from 'vue'
 
 const scaleInput = defineModel('scaleInput', { required: true })
 const locked = defineModel('locked', { type: Boolean, default: false })
+const centerCellAxes = defineModel('centerCellAxes', { type: Boolean, default: false })
 
-defineProps({
+const props = defineProps({
   currentWidth: { type: Number, required: true },
   currentHeight: { type: Number, required: true },
 })
@@ -28,6 +31,11 @@ const emit = defineEmits({
 function onChange(axis, event) {
   emit('field', { axis, value: Number(event.target.value) })
 }
+
+/** Só ímpar × ímpar tem um bloco exatamente no centro. */
+const oddMap = computed(
+  () => props.currentWidth % 2 === 1 && props.currentHeight % 2 === 1,
+)
 </script>
 
 <template>
@@ -83,6 +91,26 @@ function onChange(axis, event) {
     <button class="apply" type="button" @click="emit('apply')">
       Criar mapa
     </button>
+
+    <label class="center-axes" :class="{ 'center-axes--off': !oddMap }">
+      <input
+        type="checkbox"
+        :checked="centerCellAxes && oddMap"
+        :disabled="!oddMap"
+        @change="centerCellAxes = $event.target.checked"
+      />
+      <span>
+        <strong>Eixo no bloco central</strong>
+        <small v-if="oddMap">
+          A coluna e a linha do meio separam os quadrantes
+          ({{ Math.floor(currentWidth / 2) }} + 1 + {{ Math.floor(currentWidth / 2) }}
+          no X,
+          {{ Math.floor(currentHeight / 2) }} + 1 + {{ Math.floor(currentHeight / 2) }}
+          no Y).
+        </small>
+        <small v-else>Disponível só quando X e Y forem ímpares.</small>
+      </span>
+    </label>
   </section>
 </template>
 
@@ -183,5 +211,35 @@ function onChange(axis, event) {
 
 .apply:hover {
   filter: brightness(1.08);
+}
+
+.center-axes {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.center-axes input {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.center-axes span {
+  display: grid;
+  gap: 2px;
+}
+
+.center-axes small {
+  font-weight: 400;
+  color: var(--ink-dim);
+  line-height: 1.4;
+}
+
+.center-axes--off {
+  cursor: not-allowed;
+  color: var(--ink-dim);
 }
 </style>

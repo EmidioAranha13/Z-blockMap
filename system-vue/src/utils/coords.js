@@ -37,6 +37,25 @@ export function readableCellSize(areaWidth, areaHeight, cols, rows) {
 }
 
 /**
+ * Posição em pixels de um eixo cartesiano (linha da grade ou centro do bloco).
+ *
+ * Padrão: sobre a linha da malha em floor(n/2) — em ímpar fica 132 | 133.
+ * Com throughCenterCell (só ímpar): pelo centro do bloco do meio — 135 | 1 | 135.
+ *
+ * @param {number} count cols ou rows
+ * @param {number} origin pixel do canto do bloco (0,0)
+ * @param {number} cellSize
+ * @param {boolean} throughCenterCell
+ */
+export function cartesianAxisPixel(count, origin, cellSize, throughCenterCell) {
+  const mid = Math.floor(count / 2)
+  if (throughCenterCell && count % 2 === 1) {
+    return origin + mid * cellSize + cellSize / 2
+  }
+  return origin + mid * cellSize
+}
+
+/**
  * Origem (pixel do bloco 0,0) para centralizar a grade no canvas, no zoom 1.
  *
  * @param {number} areaWidth

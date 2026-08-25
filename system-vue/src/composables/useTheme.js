@@ -38,6 +38,7 @@ function apply(next) {
  * @returns {{
  *   theme: import('vue').Ref<'dark' | 'light'>,
  *   setTheme: (next: 'dark' | 'light') => void,
+ *   toggleTheme: () => void,
  * }}
  */
 export function useTheme() {
@@ -51,11 +52,15 @@ export function useTheme() {
     theme.value = next === 'light' ? 'light' : 'dark'
   }
 
+  function toggleTheme() {
+    setTheme(theme.value === 'dark' ? 'light' : 'dark')
+  }
+
   onMounted(() => {
     apply(theme.value)
   })
 
   watch(theme, apply)
 
-  return { theme, setTheme }
+  return { theme, setTheme, toggleTheme }
 }

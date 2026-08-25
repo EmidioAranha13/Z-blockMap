@@ -27,6 +27,7 @@ export function serializeMapFile(state) {
     height: state.height,
     selectedColor: state.selectedColor,
     scaleLocked: !!state.scaleLocked,
+    centerCellAxes: !!state.centerCellAxes,
     brushSize: state.brushSize || 1,
     colors: {
       fixed: state.fixedColors.map(stripColor),
@@ -104,6 +105,7 @@ export function parseMapFile(raw) {
     customColors,
     selectedColor: Number.isFinite(Number(data.selectedColor)) ? Number(data.selectedColor) : 1,
     scaleLocked: !!data.scaleLocked,
+    centerCellAxes: !!data.centerCellAxes && width % 2 === 1 && height % 2 === 1,
     brushSize: [1, 2, 3].includes(Number(data.brushSize)) ? Number(data.brushSize) : 1,
   }
 }
