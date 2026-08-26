@@ -10,7 +10,8 @@ Feito com **Vue 3**, **Vite**, **Canvas 2D** e a roda de cores **iro.js**.
 
 - Cria um mapa de `X` colunas por `Y` linhas (**1 a 500**), sempre com essa quantidade exata de blocos. Em escalas grandes a malha permanece visível (bloco mínimo de 6 px) sem esticar o plano: o que não cabe na tela move-se com o botão direito.
 - Eixos cartesianos no centro, separando **Q1–Q4**.
-- **Pincel:** clique ou arraste — cada bloco alterna de cor uma vez por traço.
+- **Pincel:** clique ou arraste — só pinta. Passar por cima de outro desenho troca a cor, não apaga.
+- **Borracha:** clique ou arraste — só apaga (o bloco volta a vazio). O tamanho segue o pincel.
 - **Linha / círculo:** a forma acompanha o mouse e só grava ao soltar.
 - Paleta: **7 cores fixas** + **7 slots** das cores da roda + collapse com o restante. Cada cor tem **nome** e **hex** editáveis.
 - Cadeado na escala para forçar **X = Y**. Pincel/linha/círculo com espessura **1×1, 2×2 ou 3×3**.
@@ -60,7 +61,7 @@ http://localhost:5173
 ## Como usar
 
 1. Informe X e Y (até 500) e clique em **Criar mapa**.
-2. Ferramentas: **Pincel (B)**, **Linha (L)**, **Círculo (C)**.
+2. Ferramentas: **Pincel (B)**, **Borracha (E)**, **Tinta (T)**, **Linha (L)**, **Círculo (C)**.
 3. Escolha uma cor fixa ou abra **Roda de cores**, solte o clique (ou **Adicionar esta cor**) para gravar no histórico.
 4. Edite **Nome** e **Hex** da cor selecionada.
 5. **Undo / Redo** desfazem e refazem traços. **Salvar mapa** baixa o arquivo; **Carregar mapa** reabre. **Salvar PNG** exporta só a imagem (com grade e eixos).
@@ -71,6 +72,7 @@ http://localhost:5173
 | Tecla | Ação |
 |---|---|
 | `B` | Pincel |
+| `E` | Borracha |
 | `L` | Linha |
 | `V` | Mover camada |
 | `Ctrl+Z` / `Cmd+Z` | Undo |

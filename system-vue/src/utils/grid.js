@@ -86,22 +86,6 @@ export function setCell(grid, x, y, value) {
 }
 
 /**
- * Alterna um bloco como um interruptor:
- * - se já está na cor selecionada, volta para vazio (0)
- * - caso contrário, recebe a cor selecionada
- *
- * @param {number[][]} grid
- * @param {number} x
- * @param {number} y
- * @param {number} selectedColor
- */
-export function toggleCell(grid, x, y, selectedColor) {
-  if (!inBounds(grid, x, y)) return
-  const current = grid[y][x]
-  grid[y][x] = current === selectedColor ? 0 : selectedColor
-}
-
-/**
  * Preenchimento por inundação (4 vizinhos): todos os blocos conectados
  * com a mesma cor do ponto inicial. Se a cor já for a nova, devolve vazio.
  *
@@ -180,5 +164,33 @@ export function resizeGrid(grid, width, height, fillValue = 0) {
     }
   }
 
+  return next
+}
+
+/**
+ * Copia a grade deslocada em (dx, dy). O que sairia do retângulo some;
+ * a região de origem fica vazia. Não altera o tamanho da matriz.
+ *
+ * @param {number[][]} grid
+ * @param {number} dx
+ * @param {number} dy
+ * @returns {number[][]}
+ */
+export function translateGrid(grid, dx, dy) {
+  const { width, height } = getGridSize(grid)
+  const shiftX = Math.trunc(dx) || 0
+  const shiftY = Math.trunc(dy) || 0
+  if (shiftX === 0 && shiftY === 0) return cloneGrid(grid)
+
+  const next = createGrid(width, height, 0)
+  for (let y = 0; y < height; y += 1) {
+    const ny = y + shiftY
+    if (ny < 0 || ny >= height) continue
+    for (let x = 0; x < width; x += 1) {
+      const nx = x + shiftX
+      if (nx < 0 || nx >= width) continue
+      next[ny][nx] = grid[y][x]
+    }
+  }
   return next
 }

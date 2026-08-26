@@ -41,7 +41,6 @@ const oddMap = computed(
 <template>
   <section class="scale" aria-label="Escala do mapa">
     <header class="scale__head">
-      <span class="scale__kicker">Escala</span>
       <h2>Blocos do mapa</h2>
       <p>
         Informe X (colunas) e Y (linhas). O mapa atual tem
@@ -120,15 +119,8 @@ const oddMap = computed(
   gap: 14px;
 }
 
-.scale__kicker {
-  font-size: 0.7rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--brass);
-}
-
 .scale__head h2 {
-  margin: 4px 0 6px;
+  margin: 0 0 6px;
   font-size: 1.05rem;
   font-weight: 650;
 }

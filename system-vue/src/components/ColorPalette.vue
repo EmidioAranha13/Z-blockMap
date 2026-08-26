@@ -69,8 +69,6 @@ function onHexBlur() {
 
 <template>
   <section class="palette" aria-label="Paleta de cores">
-    <span class="kicker">Cor</span>
-
     <div class="selected">
       <span
         class="selected__swatch"
@@ -172,7 +170,6 @@ function onHexBlur() {
   gap: 10px;
 }
 
-.kicker,
 .row-label {
   margin: 0;
   font-size: 0.7rem;

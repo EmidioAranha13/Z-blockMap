@@ -56,6 +56,51 @@ export function cartesianAxisPixel(count, origin, cellSize, throughCenterCell) {
 }
 
 /**
+ * Espelha a coluna X pelo eixo vertical do cartesiano (direita ↔ esquerda).
+ *
+ * @param {number} x
+ * @param {number} cols
+ * @param {boolean} centerCellAxes
+ * @returns {number}
+ */
+export function mirrorWorldX(x, cols, centerCellAxes) {
+  const mid = Math.floor(cols / 2)
+  if (centerCellAxes && cols % 2 === 1) {
+    return 2 * mid - x
+  }
+  return 2 * mid - x - 1
+}
+
+/**
+ * Acrescenta os blocos espelhados em X. Não altera Y.
+ *
+ * @param {Array<{ x: number, y: number }>} cells
+ * @param {number} cols
+ * @param {boolean} enabled
+ * @param {boolean} centerCellAxes
+ * @returns {Array<{ x: number, y: number }>}
+ */
+export function withMirrorX(cells, cols, enabled, centerCellAxes) {
+  if (!enabled || cols <= 0) return cells
+  const seen = new Set()
+  const out = []
+  for (const cell of cells) {
+    const key = `${cell.x},${cell.y}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      out.push(cell)
+    }
+    const mx = mirrorWorldX(cell.x, cols, centerCellAxes)
+    if (mx < 0 || mx >= cols) continue
+    const mirrorKey = `${mx},${cell.y}`
+    if (seen.has(mirrorKey)) continue
+    seen.add(mirrorKey)
+    out.push({ x: mx, y: cell.y })
+  }
+  return out
+}
+
+/**
  * Origem (pixel do bloco 0,0) para centralizar a grade no canvas, no zoom 1.
  *
  * @param {number} areaWidth

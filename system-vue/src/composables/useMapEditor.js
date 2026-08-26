@@ -6,13 +6,13 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { cloneFixedColors, findColor, normalizeHex } from '@/constants/palette.js'
 import { MAX_GRID_SIZE, MAX_HISTORY, RECENT_COLOR_SLOTS } from '@/constants/limits.js'
-import { TOOLS, getToolMeta } from '@/constants/tools.js'
+import { TOOLS, getToolMeta, isStampTool } from '@/constants/tools.js'
 import { downloadBlob, readTextFile } from '@/utils/download.js'
 import { renderMapToCanvas } from '@/utils/drawMap.js'
 import { FILE_EXTENSION, parseMapFile, serializeMapFile } from '@/utils/fileFormat.js'
 import { safeFileName } from '@/utils/fileName.js'
-import { blockKey } from '@/utils/coords.js'
-import { applyCells, clearGrid, inBounds, floodFillCells, toggleCell } from '@/utils/grid.js'
+import { blockKey, withMirrorX } from '@/utils/coords.js'
+import { applyCells, clearGrid, inBounds, floodFillCells, setCell } from '@/utils/grid.js'
 import { createHistory } from '@/utils/history.js'
 import {
   cloneLayerTree,
@@ -22,13 +22,14 @@ import {
   createLayer,
   findNode,
   forEachLayer,
+  bakeLayerOffset,
+  bakeTreeOffsets,
   moveNodeAmongSiblings,
-  nudgeTree,
   removeNode,
   resizeLayerTree,
   setTreeVisible,
 } from '@/utils/layers.js'
-import { clipCells, expandBrush, getEllipseFilledCells, getEllipseOutlineCells, getShapeCells, originCenteredEllipseBox } from '@/utils/shapes.js'
+import { clipCells, expandBrush, getEllipseFilledCells, getEllipseOutlineCells, getLineCells, getShapeCells, originCenteredEllipseBox } from '@/utils/shapes.js'
 
 const DEFAULT_WIDTH = 24
 const DEFAULT_HEIGHT = 16
@@ -55,12 +56,15 @@ export function useMapEditor() {
 
   const activeTool = ref(TOOLS.PENCIL)
   const fillShapes = ref(false)
+  const mirrorX = ref(false)
   const brushSize = ref(1)
   const hoverBlock = ref(null)
   const previewCells = ref([])
   const strokeOrigin = ref(null)
   const isDrawing = ref(false)
   const visitedInStroke = new Set()
+  /** Último bloco do pincel/borracha neste traço (para interpolar pulos do mouse). */
+  let stampLast = null
 
   const moveOrigin = ref(null)
   const moveBaseOffsets = ref([])
@@ -275,33 +279,48 @@ export function useMapEditor() {
       previewCells.value = []
       return
     }
-    previewCells.value = getShapeCells(
-      activeTool.value,
-      strokeOrigin.value,
-      current,
-      fillShapes.value,
+    previewCells.value = withMirrorX(
+      getShapeCells(
+        activeTool.value,
+        strokeOrigin.value,
+        current,
+        fillShapes.value,
+        mapWidth.value,
+        mapHeight.value,
+        brushSize.value,
+      ),
       mapWidth.value,
-      mapHeight.value,
-      brushSize.value,
+      mirrorX.value,
+      centerCellAxes.value,
     )
   }
 
   /**
-   * Pinta (toggle) o carimbo do pincel na camada ativa, em coords do mundo.
+   * Pinta ou apaga o carimbo do pincel na camada ativa, em coords do mundo.
    * @param {object} layer
    * @param {number} wx
    * @param {number} wy
+   * @param {number} color  Cor a gravar (0 = vazio / borracha)
    */
-  function stampPencil(layer, wx, wy) {
-    const stamps = expandBrush([{ x: wx, y: wy }], brushSize.value)
+  function stampBrush(layer, wx, wy, color) {
+    const stamps = withMirrorX(
+      expandBrush([{ x: wx, y: wy }], brushSize.value),
+      mapWidth.value,
+      mirrorX.value,
+      centerCellAxes.value,
+    )
     for (const world of stamps) {
       const local = toLocal(layer, world.x, world.y)
       const key = blockKey(local.x, local.y)
       if (visitedInStroke.has(key)) continue
       if (!inBounds(layer.grid, local.x, local.y)) continue
       visitedInStroke.add(key)
-      toggleCell(layer.grid, local.x, local.y, selectedColor.value)
+      setCell(layer.grid, local.x, local.y, color)
     }
+  }
+
+  function stampColor() {
+    return activeTool.value === TOOLS.ERASER ? 0 : selectedColor.value
   }
 
   function beginStroke(block) {
@@ -329,9 +348,10 @@ export function useMapEditor() {
       return
     }
 
-    if (activeTool.value === TOOLS.PENCIL) {
+    if (isStampTool(activeTool.value)) {
       recordHistory()
-      stampPencil(layer, block.x, block.y)
+      stampLast = { x: block.x, y: block.y }
+      stampBrush(layer, block.x, block.y, stampColor())
       previewCells.value = []
       bumpScene()
       return
@@ -342,7 +362,17 @@ export function useMapEditor() {
       const cells = floodFillCells(layer.grid, local.x, local.y, selectedColor.value)
       if (cells.length === 0) return
       recordHistory()
-      applyCells(layer.grid, cells, selectedColor.value)
+      const worlds = cells.map((cell) => ({
+        x: cell.x + layer.offsetX,
+        y: cell.y + layer.offsetY,
+      }))
+      const mirrored = withMirrorX(worlds, mapWidth.value, mirrorX.value, centerCellAxes.value)
+      const locals = []
+      for (const world of mirrored) {
+        const at = toLocal(layer, world.x, world.y)
+        if (inBounds(layer.grid, at.x, at.y)) locals.push(at)
+      }
+      applyCells(layer.grid, locals, selectedColor.value)
       previewCells.value = []
       bumpScene()
       return
@@ -372,8 +402,14 @@ export function useMapEditor() {
     const layer = activeLayer.value
     if (!layer) return
 
-    if (activeTool.value === TOOLS.PENCIL) {
-      stampPencil(layer, block.x, block.y)
+    if (isStampTool(activeTool.value)) {
+      const from = stampLast || block
+      const path = getLineCells(from.x, from.y, block.x, block.y)
+      const color = stampColor()
+      for (const cell of path) {
+        stampBrush(layer, cell.x, cell.y, color)
+      }
+      stampLast = { x: block.x, y: block.y }
       bumpScene()
       return
     }
@@ -386,13 +422,23 @@ export function useMapEditor() {
   function endStroke() {
     if (!isDrawing.value) return
 
-    if (activeTool.value === TOOLS.MOVE || activeTool.value === TOOLS.FILL) {
+    if (activeTool.value === TOOLS.MOVE) {
+      for (const base of moveBaseOffsets.value) {
+        const layer = findNode(layerTree.value, base.id)
+        if (layer && layer.type === 'layer') bakeLayerOffset(layer)
+      }
+      bumpScene()
+      cancelStroke()
+      return
+    }
+
+    if (activeTool.value === TOOLS.FILL) {
       cancelStroke()
       return
     }
 
     const layer = activeLayer.value
-    if (layer && activeTool.value !== TOOLS.PENCIL && previewCells.value.length > 0) {
+    if (layer && !isStampTool(activeTool.value) && previewCells.value.length > 0) {
       recordHistory()
       const locals = []
       for (const world of previewCells.value) {
@@ -411,6 +457,7 @@ export function useMapEditor() {
     strokeOrigin.value = null
     previewCells.value = []
     visitedInStroke.clear()
+    stampLast = null
     moveOrigin.value = null
     moveBaseOffsets.value = []
   }
@@ -437,7 +484,12 @@ export function useMapEditor() {
     const raw = fillShapes.value
       ? getEllipseFilledCells(box.x0, box.y0, box.x1, box.y1)
       : getEllipseOutlineCells(box.x0, box.y0, box.x1, box.y1)
-    const worlds = clipCells(raw, mapWidth.value, mapHeight.value)
+    const worlds = withMirrorX(
+      clipCells(expandBrush(raw, brushSize.value), mapWidth.value, mapHeight.value),
+      mapWidth.value,
+      mirrorX.value,
+      centerCellAxes.value,
+    )
     if (worlds.length === 0) return
 
     recordHistory()
@@ -591,6 +643,7 @@ export function useMapEditor() {
       centerCellAxes.value = parsed.centerCellAxes
       brushSize.value = parsed.brushSize
       layerTree.value = parsed.layerTree
+      bakeTreeOffsets(layerTree.value)
       const first = firstLayer(layerTree.value)
       activeNodeId.value = first ? first.id : ''
       fixedColors.value = parsed.fixedColors
@@ -644,6 +697,7 @@ export function useMapEditor() {
       return
     }
     if (key === 'b') setTool(TOOLS.PENCIL)
+    if (key === 'e') setTool(TOOLS.ERASER)
     if (key === 't') setTool(TOOLS.FILL)
     if (key === 'l') setTool(TOOLS.LINE)
     if (key === 'c') setTool(TOOLS.CIRCLE)
@@ -660,6 +714,7 @@ export function useMapEditor() {
     selectedColor,
     selectedColorInfo,
     fillShapes,
+    mirrorX,
     brushSize,
     hoverBlock,
     previewCells,

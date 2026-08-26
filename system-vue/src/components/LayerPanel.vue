@@ -27,8 +27,6 @@ const emit = defineEmits({
 
 <template>
   <section class="layers" aria-label="Camadas">
-    <span class="kicker">Camadas</span>
-
     <ul class="tree">
       <LayerRow
         v-for="node in [...tree].reverse()"
@@ -60,13 +58,6 @@ const emit = defineEmits({
 .layers {
   display: grid;
   gap: 8px;
-}
-
-.kicker {
-  font-size: 0.7rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--brass);
 }
 
 .tree {

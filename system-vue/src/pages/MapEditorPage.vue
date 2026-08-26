@@ -9,6 +9,7 @@ import EditorToolbar from '@/components/EditorToolbar.vue'
 import LayerPanel from '@/components/LayerPanel.vue'
 import MapCanvas from '@/components/MapCanvas.vue'
 import ScalePanel from '@/components/ScalePanel.vue'
+import SideCollapse from '@/components/SideCollapse.vue'
 import StatusBar from '@/components/StatusBar.vue'
 import { TOOLS } from '@/constants/tools.js'
 import { useMapEditor } from '@/composables/useMapEditor.js'
@@ -26,6 +27,7 @@ const {
   selectedColor,
   selectedColorInfo,
   fillShapes,
+  mirrorX,
   brushSize,
   hoverBlock,
   previewCells,
@@ -156,34 +158,36 @@ onUnmounted(() => {
             <span>Nome do mapa</span>
             <input v-model="mapName" type="text" maxlength="80" placeholder="Nome do mapa" />
           </label>
-          <hr class="rule" />
-          <ScalePanel
-            v-model:scale-input="scaleInput"
-            v-model:locked="scaleLocked"
-            v-model:center-cell-axes="centerCellAxes"
-            :current-width="gridSize.width"
-            :current-height="gridSize.height"
-            @apply="applyScale"
-            @field="onScaleField($event.axis, $event.value)"
-          />
-          <hr class="rule" />
-          <LayerPanel
-            :tree="layerTree"
-            :active-id="activeNodeId"
-            @select="selectNode"
-            @toggle-visible="toggleNodeVisible"
-            @rename="renameNode($event.id, $event.name)"
-            @toggle-collapsed="toggleGroupCollapsed"
-            @add-layer="addLayer"
-            @add-group="addGroup"
-            @group="groupSelection"
-            @remove="deleteNode"
-            @shift="shiftNode"
-          />
-          <hr class="rule" />
+          <SideCollapse title="Escala" storage-key="escala">
+            <ScalePanel
+              v-model:scale-input="scaleInput"
+              v-model:locked="scaleLocked"
+              v-model:center-cell-axes="centerCellAxes"
+              :current-width="gridSize.width"
+              :current-height="gridSize.height"
+              @apply="applyScale"
+              @field="onScaleField($event.axis, $event.value)"
+            />
+          </SideCollapse>
+          <SideCollapse title="Camadas" storage-key="camadas">
+            <LayerPanel
+              :tree="layerTree"
+              :active-id="activeNodeId"
+              @select="selectNode"
+              @toggle-visible="toggleNodeVisible"
+              @rename="renameNode($event.id, $event.name)"
+              @toggle-collapsed="toggleGroupCollapsed"
+              @add-layer="addLayer"
+              @add-group="addGroup"
+              @group="groupSelection"
+              @remove="deleteNode"
+              @shift="shiftNode"
+            />
+          </SideCollapse>
           <EditorToolbar
             :active-tool="activeTool"
             v-model:fill-shapes="fillShapes"
+            v-model:mirror-x="mirrorX"
             :selected-color="selectedColor"
             :selected-color-info="selectedColorInfo"
             :fixed-colors="fixedColors"
@@ -300,6 +304,9 @@ onUnmounted(() => {
 .map-name {
   display: grid;
   gap: 6px;
+  padding-bottom: 10px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--line);
   font-size: 0.75rem;
   color: var(--ink-dim);
 }
@@ -412,12 +419,6 @@ onUnmounted(() => {
 
 .drawer:not(.drawer--closed) .drawer-tab__arrow {
   transform: scaleX(-1);
-}
-
-.rule {
-  border: 0;
-  border-top: 1px solid var(--line);
-  margin: 14px 0;
 }
 
 .stage {

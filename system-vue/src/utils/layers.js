@@ -1,11 +1,11 @@
 /**
  * Árvore de camadas e grupos.
  *
- * Cada camada tem a própria grade (mesmo X×Y do cartesiano) e um deslocamento
- * em blocos. Grupos só organizam filhas: visibilidade e movimento no grupo
- * se aplicam a todas as camadas descendentes.
+ * Cada camada tem a própria grade (mesmo X×Y do cartesiano).
+ * offsetX/Y só existem no arrasto ao vivo da ferramenta Mover; ao soltar,
+ * o desenho é copiado na grade e o offset volta a 0.
  */
-import { cloneGrid, createGrid, resizeGrid } from '@/utils/grid.js'
+import { cloneGrid, createGrid, resizeGrid, translateGrid } from '@/utils/grid.js'
 
 /**
  * @typedef {object} LayerNode
@@ -171,15 +171,38 @@ export function setTreeVisible(node, visible) {
 }
 
 /**
- * Soma um deslocamento em todas as camadas sob o nó.
+ * Grava o offset na grade (translada os blocos) e zera o deslocamento.
+ * O que cairia fora do cartesiano é descartado.
+ * @param {LayerNode} layer
+ */
+export function bakeLayerOffset(layer) {
+  const dx = layer.offsetX || 0
+  const dy = layer.offsetY || 0
+  if (dx === 0 && dy === 0) return
+  layer.grid = translateGrid(layer.grid, dx, dy)
+  layer.offsetX = 0
+  layer.offsetY = 0
+}
+
+/**
+ * Grava o offset de todas as camadas da árvore.
+ * @param {Array<LayerNode | GroupNode>} nodes
+ */
+export function bakeTreeOffsets(nodes) {
+  walkTree(nodes, (node) => {
+    if (node.type === 'layer') bakeLayerOffset(node)
+  })
+}
+
+/**
+ * Soma um deslocamento no desenho de todas as camadas sob o nó.
  * @param {LayerNode | GroupNode} node
  * @param {number} dx
  * @param {number} dy
  */
 export function nudgeTree(node, dx, dy) {
   forEachLayer(node, (layer) => {
-    layer.offsetX += dx
-    layer.offsetY += dy
+    layer.grid = translateGrid(layer.grid, dx, dy)
   })
 }
 

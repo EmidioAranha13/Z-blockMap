@@ -9,13 +9,18 @@
  *  - scroll do mouse, usando a posição do cursor como centro do zoom
  *  - zoom 1 mantém a grade visível (bloco mínimo) sem mudar o tamanho da página
  *
- * Pan: botão direito pressionado e arrastado.
- * Desenho: botão esquerdo (igual ao restante do editor).
+ * Pan: botão direito pressionado e arrastado. O botão acima do zoom +
+ * ativa o mesmo movimento com o esquerdo enquanto estiver ligado.
+ * Tela cheia: a página inteira (side incluso), como a janela do navegador.
+ * Desenho: botão esquerdo (quando o pan por esquerdo não está ativo).
  * LOD: a malha agrupa linhas com zoom distante; o desenho é a matriz
  * em menor resolução (não um bloco de uma cor só).
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import tintaIcon from '@/assets/tinta.png'
+import moveTudoIcon from '@/assets/move_gtudo.png'
+import expandIcon from '@/assets/expande.png'
+import minimoIcon from '@/assets/minimo.png'
 import { MAX_ZOOM, MIN_ZOOM } from '@/constants/limits.js'
 import { TOOLS } from '@/constants/tools.js'
 import {
@@ -60,8 +65,12 @@ const canvasRef = ref(null)
 const viewSize = ref({ width: 640, height: 480 })
 const zoom = ref(1)
 const origin = ref({ x: 0, y: 0 })
-/** True enquanto o botão direito está arrastando o mapa. */
+/** True enquanto o mapa está sendo arrastado (direito, ou esquerdo no modo pan). */
 const isPanning = ref(false)
+/** True quando o botão de mover tudo está ligado: esquerdo arrasta o mapa. */
+const panMode = ref(false)
+/** True quando o canvas está em tela cheia. */
+const isFullscreen = ref(false)
 const canvasCursor = ref('crosshair')
 /** Cursor da tinta, um por tema (invertido no dark). */
 const fillCursorByTheme = { dark: '', light: '' }
@@ -161,6 +170,29 @@ function zoomByButton(factor) {
   applyZoomAt(zoom.value * factor, viewSize.value.width / 2, viewSize.value.height / 2)
 }
 
+function fullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null
+}
+
+function syncFullscreen() {
+  isFullscreen.value = Boolean(fullscreenElement())
+}
+
+async function toggleFullscreen() {
+  const root = document.documentElement
+  try {
+    if (fullscreenElement()) {
+      if (document.exitFullscreen) await document.exitFullscreen()
+      else document.webkitExitFullscreen?.()
+      return
+    }
+    if (root.requestFullscreen) await root.requestFullscreen()
+    else root.webkitRequestFullscreen?.()
+  } catch {
+    /* API indisponível ou recusada */
+  }
+}
+
 /**
  * Redesenha grade, preview, hover, eixos e fundo do tema.
  */
@@ -225,11 +257,13 @@ function eventToBlockClamped(event) {
 }
 
 /**
- * Esquerdo = desenho; direito = pan do mapa (útil com zoom).
+ * Direito = pan do mapa. Esquerdo = desenho, ou pan se o modo mover-tudo
+ * estiver ligado.
  * @param {PointerEvent} event
  */
 function onPointerDown(event) {
-  if (event.button === 2) {
+  const leftPan = event.button === 0 && panMode.value
+  if (event.button === 2 || leftPan) {
     event.preventDefault()
     isPanning.value = true
     panLast = eventToCanvasPoint(event, canvasRef.value)
@@ -257,6 +291,11 @@ function onPointerMove(event) {
     }
     panLast = point
     draw()
+    return
+  }
+
+  if (panMode.value) {
+    emit('hover', null)
     return
   }
 
@@ -302,11 +341,19 @@ onMounted(() => {
   })
   if (wrapRef.value) resizeObserver.observe(wrapRef.value)
   canvasRef.value?.addEventListener('wheel', onWheel, { passive: false })
+  document.addEventListener('fullscreenchange', syncFullscreen)
+  document.addEventListener('webkitfullscreenchange', syncFullscreen)
 })
 
 onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect()
   canvasRef.value?.removeEventListener('wheel', onWheel)
+  document.removeEventListener('fullscreenchange', syncFullscreen)
+  document.removeEventListener('webkitfullscreenchange', syncFullscreen)
+  if (fullscreenElement()) {
+    if (document.exitFullscreen) document.exitFullscreen()
+    else document.webkitExitFullscreen?.()
+  }
 })
 
 watch(
@@ -324,10 +371,14 @@ watch(
 )
 
 watch(
-  () => [props.activeTool, isPanning.value, props.theme],
+  () => [props.activeTool, isPanning.value, panMode.value, props.theme],
   async () => {
     if (isPanning.value) {
       canvasCursor.value = 'grabbing'
+      return
+    }
+    if (panMode.value) {
+      canvasCursor.value = 'grab'
       return
     }
     if (props.activeTool !== TOOLS.FILL) {
@@ -359,7 +410,25 @@ watch(
       @pointercancel="onPointerCancel"
       @contextmenu.prevent
     />
-    <div class="zoom" aria-label="Controles de zoom">
+    <div class="zoom" aria-label="Controles de câmera">
+      <button
+        type="button"
+        class="zoom__pan"
+        :title="isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'"
+        @click="toggleFullscreen"
+      >
+        <img class="zoom__icon" :src="isFullscreen ? minimoIcon : expandIcon" alt="" />
+      </button>
+      <button
+        type="button"
+        class="zoom__pan"
+        :class="{ 'zoom__pan--on': panMode }"
+        title="Mover o mapa com o botão esquerdo"
+        :aria-pressed="panMode"
+        @click="panMode = !panMode"
+      >
+        <img class="zoom__icon" :src="moveTudoIcon" alt="" />
+      </button>
       <button type="button" title="Aproximar" @click="zoomByButton(1.2)">+</button>
       <button type="button" title="Afastar" @click="zoomByButton(1 / 1.2)">−</button>
     </div>
@@ -414,5 +483,25 @@ watch(
 
 .zoom button:hover {
   border-color: var(--brass);
+}
+
+.zoom__pan {
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.zoom button.zoom__pan--on,
+.zoom button.zoom__pan--on:hover {
+  border-color: var(--brass);
+  background: var(--tool-on);
+  box-shadow: inset 3px 0 0 var(--brass), 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.zoom__icon {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  filter: var(--icon-filter);
 }
 </style>

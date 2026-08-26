@@ -58,7 +58,7 @@ export default {
         @click.stop
         @change="$emit('rename', { id: node.id, name: $event.target.value })"
       />
-      <span v-if="node.type === 'layer'" class="off">{{ node.offsetX }},{{ node.offsetY }}</span>
+      />
     </div>
     <ul v-if="node.type === 'group' && !node.collapsed && node.children.length" class="nest">
       <LayerRow
@@ -121,12 +121,6 @@ export default {
   background: transparent;
   color: var(--ink);
   font-size: 0.78rem;
-}
-
-.off {
-  font-family: var(--mono);
-  font-size: 0.65rem;
-  color: var(--ink-dim);
 }
 
 .nest {

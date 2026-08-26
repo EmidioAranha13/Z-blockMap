@@ -5,9 +5,25 @@
  * Ferramentas de desenho, paleta (fixas + roda) e ações de arquivo/histórico.
  */
 import ColorPalette from '@/components/ColorPalette.vue'
+import SideCollapse from '@/components/SideCollapse.vue'
 import { TOOLS, TOOL_META } from '@/constants/tools.js'
+import penIcon from '@/assets/pen.png'
+import borrachaIcon from '@/assets/borracha.png'
 import tintaIcon from '@/assets/tinta.png'
+import linhaIcon from '@/assets/linha.png'
+import circuloIcon from '@/assets/circulo.png'
+import perfectIcon from '@/assets/perfect.png'
+import moveDesenhoIcon from '@/assets/move_desenho.png'
 import { ref } from 'vue'
+
+const TOOL_ICONS = {
+  [TOOLS.PENCIL]: penIcon,
+  [TOOLS.ERASER]: borrachaIcon,
+  [TOOLS.FILL]: tintaIcon,
+  [TOOLS.LINE]: linhaIcon,
+  [TOOLS.CIRCLE]: circuloIcon,
+  [TOOLS.MOVE]: moveDesenhoIcon,
+}
 
 const props = defineProps({
   activeTool: { type: String, required: true },
@@ -22,12 +38,14 @@ const props = defineProps({
   brushSize: { type: Number, default: 1 },
   mapWidth: { type: Number, required: true },
   mapHeight: { type: Number, required: true },
+  mirrorX: { type: Boolean, default: false },
 })
 
 const emit = defineEmits({
   'set-tool': (toolId) => typeof toolId === 'string',
   'set-color': (colorId) => typeof colorId === 'number',
   'update:fillShapes': (value) => typeof value === 'boolean',
+  'update:mirrorX': (value) => typeof value === 'boolean',
   'commit-color': (hex) => typeof hex === 'string',
   rename: null,
   recolor: null,
@@ -65,8 +83,7 @@ function confirmPerfectShape() {
 
 <template>
   <section class="toolbar" aria-label="Ferramentas de desenho">
-    <div>
-      <span class="kicker">Ferramenta</span>
+    <SideCollapse title="Ferramentas" storage-key="ferramentas">
       <div class="tool-list">
         <template v-for="tool in TOOL_META" :key="tool.id">
           <button
@@ -77,7 +94,7 @@ function confirmPerfectShape() {
             @click="emit('set-tool', tool.id)"
           >
             <span class="tool__lead">
-              <img v-if="tool.icon === 'tinta'" class="tool__icon" :src="tintaIcon" alt="" />
+              <img v-if="TOOL_ICONS[tool.id]" class="tool__icon" :src="TOOL_ICONS[tool.id]" alt="" />
               <span class="tool__name">{{ tool.label }}</span>
             </span>
             <kbd>{{ tool.shortcut }}</kbd>
@@ -90,62 +107,76 @@ function confirmPerfectShape() {
             @click="openPerfectModal"
           >
             <span class="tool__lead">
+              <img class="tool__icon" :src="perfectIcon" alt="" />
               <span class="tool__name">Forma perfeita</span>
             </span>
           </button>
         </template>
       </div>
-    </div>
 
-    <label class="fill">
-      <span>Pixels</span>
-      <select
-        class="brush"
-        :value="brushSize"
-        @change="emit('set-brush', Number($event.target.value))"
-      >
-        <option :value="1">1 × 1</option>
-        <option :value="2">2 × 2</option>
-        <option :value="3">3 × 3</option>
-      </select>
-    </label>
+      <label class="fill">
+        <span>Pixels</span>
+        <select
+          class="brush"
+          :value="brushSize"
+          @change="emit('set-brush', Number($event.target.value))"
+        >
+          <option :value="1">1 × 1</option>
+          <option :value="2">2 × 2</option>
+          <option :value="3">3 × 3</option>
+        </select>
+      </label>
 
-    <label class="fill">
-      <input
-        type="checkbox"
-        :checked="fillShapes"
-        @change="emit('update:fillShapes', $event.target.checked)"
+      <label class="fill">
+        <input
+          type="checkbox"
+          :checked="fillShapes"
+          @change="emit('update:fillShapes', $event.target.checked)"
+        />
+        Preencher forma
+      </label>
+
+      <label class="fill">
+        <input
+          type="checkbox"
+          :checked="mirrorX"
+          @change="emit('update:mirrorX', $event.target.checked)"
+        />
+        Simetria espelhada
+      </label>
+    </SideCollapse>
+
+    <SideCollapse title="Cores" storage-key="cores">
+      <ColorPalette
+        :fixed-colors="fixedColors"
+        :recent-custom="recentCustom"
+        :extra-custom="extraCustom"
+        :selected-color="selectedColor"
+        :selected-color-info="selectedColorInfo"
+        @set-color="emit('set-color', $event)"
+        @commit="emit('commit-color', $event)"
+        @rename="emit('rename', $event)"
+        @recolor="emit('recolor', $event)"
       />
-      Preencher forma
-    </label>
+    </SideCollapse>
 
-    <ColorPalette
-      :fixed-colors="fixedColors"
-      :recent-custom="recentCustom"
-      :extra-custom="extraCustom"
-      :selected-color="selectedColor"
-      :selected-color-info="selectedColorInfo"
-      @set-color="emit('set-color', $event)"
-      @commit="emit('commit-color', $event)"
-      @rename="emit('rename', $event)"
-      @recolor="emit('recolor', $event)"
-    />
+    <SideCollapse title="Extras" storage-key="extras">
+      <div class="history">
+        <button type="button" class="ghost" :disabled="!canUndo" @click="emit('undo')">
+          Undo
+        </button>
+        <button type="button" class="ghost" :disabled="!canRedo" @click="emit('redo')">
+          Redo
+        </button>
+      </div>
 
-    <div class="history">
-      <button type="button" class="ghost" :disabled="!canUndo" @click="emit('undo')">
-        Undo
-      </button>
-      <button type="button" class="ghost" :disabled="!canRedo" @click="emit('redo')">
-        Redo
-      </button>
-    </div>
-
-    <div class="actions">
-      <button type="button" class="ghost" @click="emit('save')">Salvar mapa</button>
-      <button type="button" class="ghost" @click="emit('load')">Carregar mapa</button>
-      <button type="button" class="ghost" @click="emit('png')">Salvar PNG</button>
-      <button type="button" class="danger" @click="emit('clear')">Limpar mapa</button>
-    </div>
+      <div class="actions">
+        <button type="button" class="ghost" @click="emit('save')">Salvar mapa</button>
+        <button type="button" class="ghost" @click="emit('load')">Carregar mapa</button>
+        <button type="button" class="ghost" @click="emit('png')">Salvar PNG</button>
+        <button type="button" class="danger" @click="emit('clear')">Limpar mapa</button>
+      </div>
+    </SideCollapse>
   </section>
 
   <Teleport to="body">
@@ -195,16 +226,7 @@ function confirmPerfectShape() {
 <style scoped>
 .toolbar {
   display: grid;
-  gap: 16px;
-}
-
-.kicker {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 0.7rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--brass);
+  gap: 0;
 }
 
 .tool-list {
