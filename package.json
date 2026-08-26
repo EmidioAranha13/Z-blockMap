@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "npm run dev --prefix system-vue",
     "build": "npm run build --prefix system-vue",
-    "preview": "npm run preview --prefix system-vue"
+    "preview": "npm run preview --prefix system-vue",
+    "mobile": "npm start --prefix system-react-native"
   }
 }
