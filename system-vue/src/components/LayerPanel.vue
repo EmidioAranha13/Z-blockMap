@@ -21,6 +21,9 @@ const emit = defineEmits({
   addGroup: null,
   group: null,
   remove: null,
+  duplicate: null,
+  'flip-h': null,
+  'flip-v': null,
   shift: (dir) => typeof dir === 'number',
 })
 </script>
@@ -44,6 +47,11 @@ const emit = defineEmits({
     <div class="row-btns">
       <button type="button" class="ghost" title="Nova camada" @click="emit('addLayer')">+ Camada</button>
       <button type="button" class="ghost" title="Novo grupo" @click="emit('addGroup')">+ Grupo</button>
+    </div>
+    <div class="row-btns">
+      <button type="button" class="ghost" title="Duplicar a camada ou grupo selecionado" @click="emit('duplicate')">Duplicar</button>
+      <button type="button" class="ghost" title="Inverter a camada na horizontal" @click="emit('flip-h')">Inverter H</button>
+      <button type="button" class="ghost" title="Inverter a camada na vertical" @click="emit('flip-v')">Inverter V</button>
     </div>
     <div class="row-btns">
       <button type="button" class="ghost" @click="emit('group')">Agrupar</button>

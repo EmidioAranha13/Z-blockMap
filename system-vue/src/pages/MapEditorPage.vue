@@ -11,7 +11,7 @@ import MapCanvas from '@/components/MapCanvas.vue'
 import ScalePanel from '@/components/ScalePanel.vue'
 import SideCollapse from '@/components/SideCollapse.vue'
 import StatusBar from '@/components/StatusBar.vue'
-import { TOOLS } from '@/constants/tools.js'
+import { TOOLS, isStrokeTool } from '@/constants/tools.js'
 import { useMapEditor } from '@/composables/useMapEditor.js'
 import { useTheme } from '@/composables/useTheme.js'
 import luaIcon from '@/assets/lua.png'
@@ -31,7 +31,9 @@ const {
   brushSize,
   hoverBlock,
   previewCells,
+  paintDabs,
   isDrawing,
+  sceneTick,
   gridSize,
   activeToolMeta,
   fixedColors,
@@ -64,6 +66,8 @@ const {
   toggleNodeVisible,
   renameNode,
   shiftNode,
+  duplicateNode,
+  flipActiveLayer,
   toggleGroupCollapsed,
   undo,
   redo,
@@ -104,9 +108,7 @@ function toggleDrawer() {
   }
 }
 
-const clampStroke = computed(
-  () => activeTool.value === TOOLS.LINE || activeTool.value === TOOLS.CIRCLE || activeTool.value === TOOLS.MOVE,
-)
+const clampStroke = computed(() => isStrokeTool(activeTool.value))
 
 function onKeydown(event) {
   handleKeydown(event)
@@ -180,6 +182,9 @@ onUnmounted(() => {
               @add-layer="addLayer"
               @add-group="addGroup"
               @group="groupSelection"
+              @duplicate="duplicateNode"
+              @flip-h="flipActiveLayer('h')"
+              @flip-v="flipActiveLayer('v')"
               @remove="deleteNode"
               @shift="shiftNode"
             />
@@ -198,6 +203,7 @@ onUnmounted(() => {
             :brush-size="brushSize"
             :map-width="gridSize.width"
             :map-height="gridSize.height"
+            :center-cell-axes="centerCellAxes"
             @set-tool="setTool"
             @set-color="setColor"
             @set-brush="setBrushSize"
@@ -210,7 +216,7 @@ onUnmounted(() => {
             @load="openLoadDialog"
             @png="savePng(theme)"
             @clear="clearMap"
-            @perfect-shape="stampPerfectShape($event.x, $event.y)"
+            @perfect-shape="stampPerfectShape($event)"
           />
         </aside>
         <button
@@ -238,6 +244,8 @@ onUnmounted(() => {
           :clamp-stroke="clampStroke"
           :theme="theme"
           :center-cell-axes="centerCellAxes"
+          :scene-tick="sceneTick"
+          :paint-dabs="paintDabs"
           @hover="setHover"
           @stroke-start="beginStroke"
           @stroke-move="continueStroke"

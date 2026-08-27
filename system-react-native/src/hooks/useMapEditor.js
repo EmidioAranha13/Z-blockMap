@@ -12,10 +12,13 @@ import { TOOLS, getToolMeta, isStampTool } from '../constants/tools.js'
 import { FILE_EXTENSION, parseMapFile, serializeMapFile } from '../utils/fileFormat.js'
 import { safeFileName } from '../utils/fileName.js'
 import { blockKey, withMirrorX } from '../utils/coords.js'
-import { applyCells, clearGrid, inBounds, floodFillCells, setCell } from '../utils/grid.js'
+import { applyCells, clearGrid, getGridSize, inBounds, floodFillCells, setCell } from '../utils/grid.js'
 import { createHistory } from '../utils/history.js'
 import {
   cloneLayerTree,
+  cloneNodeDeep,
+  insertNodeAfter,
+  flipNodeGrids,
   compositeLayerTree,
   countLayers,
   createGroup,
@@ -29,15 +32,7 @@ import {
   resizeLayerTree,
   setTreeVisible,
 } from '../utils/layers.js'
-import {
-  clipCells,
-  expandBrush,
-  getEllipseFilledCells,
-  getEllipseOutlineCells,
-  getLineCells,
-  getShapeCells,
-  originCenteredEllipseBox,
-} from '../utils/shapes.js'
+import { expandBrush, getLineCells, getPerfectShapeCells, getShapeCells } from '../utils/shapes.js'
 import { buildVisiblePixels } from '../utils/drawMap.js'
 
 const DEFAULT_WIDTH = 24
@@ -103,6 +98,7 @@ export function useMapEditor() {
   mapSizeRef.current = {
     width: mapWidth,
     height: mapHeight,
+    scaleLocked,
     centerCellAxes,
     mirrorX,
     brushSize,
@@ -115,14 +111,49 @@ export function useMapEditor() {
   if (!historyRef.current) {
     historyRef.current = createHistory(
       MAX_HISTORY,
-      () => cloneLayerTree(layerTreeRef.current),
+      () => ({
+        layerTree: cloneLayerTree(layerTreeRef.current),
+        width: mapSizeRef.current.width,
+        height: mapSizeRef.current.height,
+        scaleLocked: mapSizeRef.current.scaleLocked,
+        centerCellAxes: mapSizeRef.current.centerCellAxes,
+        activeNodeId: activeNodeIdRef.current,
+      }),
       (snapshot) => {
-        setLayerTree(snapshot)
-        setSceneTick((n) => n + 1)
-        if (!findNode(snapshot, activeNodeIdRef.current)) {
-          const first = firstLayer(snapshot)
+        const treeSource = Array.isArray(snapshot) ? snapshot : snapshot.layerTree
+        const tree = cloneLayerTree(treeSource)
+        let width
+        let height
+        if (!Array.isArray(snapshot) && snapshot.width && snapshot.height) {
+          width = snapshot.width
+          height = snapshot.height
+          setScaleLocked(Boolean(snapshot.scaleLocked))
+          setCenterCellAxes(Boolean(snapshot.centerCellAxes))
+          setActiveNodeId(snapshot.activeNodeId)
+        } else {
+          const first = firstLayer(tree)
+          const size = first
+            ? getGridSize(first.grid)
+            : { width: mapSizeRef.current.width, height: mapSizeRef.current.height }
+          width = size.width
+          height = size.height
+        }
+        setLayerTree(tree)
+        setMapWidth(width)
+        setMapHeight(height)
+        setScaleInput({ x: width, y: height })
+        if (!findNode(tree, activeNodeIdRef.current)) {
+          const first = firstLayer(tree)
           setActiveNodeId(first ? first.id : '')
         }
+        setIsDrawing(false)
+        visitedInStroke.current.clear()
+        stampLast.current = null
+        strokeOrigin.current = null
+        moveOrigin.current = null
+        moveBaseOffsets.current = []
+        setPreviewCells([])
+        setSceneTick((n) => n + 1)
       },
     )
   }
@@ -362,11 +393,20 @@ export function useMapEditor() {
     if (!layer) return
 
     if (isStampTool(tool)) {
-      const from = stampLast.current || block
-      const path = getLineCells(from.x, from.y, block.x, block.y)
+      const points = Array.isArray(block) ? block : [block]
       const paint = tool === TOOLS.ERASER ? 0 : color
-      for (const cell of path) stampBrush(layer, cell.x, cell.y, paint)
-      stampLast.current = { x: block.x, y: block.y }
+      for (const point of points) {
+        if (stampLast.current && stampLast.current.x === point.x && stampLast.current.y === point.y) continue
+        const from = stampLast.current || point
+        const jumped = Math.abs(point.x - from.x) > 1 || Math.abs(point.y - from.y) > 1
+        if (jumped) {
+          const path = getLineCells(from.x, from.y, point.x, point.y)
+          for (const cell of path) stampBrush(layer, cell.x, cell.y, paint)
+        } else {
+          stampBrush(layer, point.x, point.y, paint)
+        }
+        stampLast.current = { x: point.x, y: point.y }
+      }
       bumpScene()
       return
     }
@@ -413,20 +453,31 @@ export function useMapEditor() {
     cancelStroke()
   }, [recordHistory, bumpScene, cancelStroke])
 
-  const stampPerfectShape = useCallback((sizeX, sizeY) => {
+  const stampPerfectShape = useCallback((opts) => {
     const node = findNode(layerTreeRef.current, activeNodeIdRef.current)
     const layer = node && node.type === 'layer' ? node : null
     if (!layer) {
       setFileMessage('Selecione uma camada para desenhar.')
       return
     }
-    const { width, height, fillShapes: fill, mirrorX: mx, centerCellAxes: axes, brushSize: size, selectedColor: color } =
+    const { width, height, fillShapes: fill, mirrorX: mx, centerCellAxes: axes, selectedColor: color } =
       mapSizeRef.current
-    const box = originCenteredEllipseBox(width, height, sizeX, sizeY, axes)
-    const raw = fill
-      ? getEllipseFilledCells(box.x0, box.y0, box.x1, box.y1)
-      : getEllipseOutlineCells(box.x0, box.y0, box.x1, box.y1)
-    const worlds = withMirrorX(clipCells(expandBrush(raw, size), width, height), width, mx, axes)
+    const worlds = withMirrorX(
+      getPerfectShapeCells({
+        tool: opts.tool,
+        cols: width,
+        rows: height,
+        sizeX: opts.x,
+        sizeY: opts.y,
+        centerCellAxes: axes,
+        filled: fill,
+        thickness: opts.thickness,
+        orientation: opts.orientation,
+      }),
+      width,
+      mx,
+      axes,
+    )
     if (worlds.length === 0) return
     recordHistory()
     const locals = []
@@ -521,6 +572,34 @@ export function useMapEditor() {
   const shiftNode = useCallback((dir) => {
     recordHistory()
     moveNodeAmongSiblings(layerTreeRef.current, activeNodeIdRef.current, dir)
+    bumpScene()
+  }, [recordHistory, bumpScene])
+
+  const duplicateNode = useCallback(() => {
+    const tree = layerTreeRef.current
+    const node = findNode(tree, activeNodeIdRef.current)
+    if (!node) {
+      setFileMessage('Selecione uma camada ou grupo para duplicar.')
+      return
+    }
+    recordHistory()
+    const copy = cloneNodeDeep(node)
+    if (!insertNodeAfter(tree, node.id, copy)) {
+      tree.push(copy)
+    }
+    setLayerTree(tree.slice())
+    setActiveNodeId(copy.id)
+    setSceneTick((n) => n + 1)
+  }, [recordHistory])
+
+  const flipActiveLayer = useCallback((axis) => {
+    const node = findNode(layerTreeRef.current, activeNodeIdRef.current)
+    if (!node) {
+      setFileMessage('Selecione uma camada para inverter.')
+      return
+    }
+    recordHistory()
+    flipNodeGrids(node, axis)
     bumpScene()
   }, [recordHistory, bumpScene])
 
@@ -693,6 +772,8 @@ export function useMapEditor() {
     toggleNodeVisible,
     renameNode,
     shiftNode,
+    duplicateNode,
+    flipActiveLayer,
     toggleGroupCollapsed,
     undo,
     redo,

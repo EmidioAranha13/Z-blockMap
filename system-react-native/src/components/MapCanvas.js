@@ -17,8 +17,11 @@ import {
   Skia,
   vec,
 } from '@shopify/react-native-skia'
+import { TOOLS, isStampTool } from '../constants/tools.js'
 import { MAX_ZOOM, MIN_ZOOM } from '../constants/limits.js'
+import { formatLineDistance } from '../utils/shapes.js'
 import {
+  blocksAlongCanvasSegment,
   centeredOrigin,
   fitCellSize,
   originAfterZoom,
@@ -76,6 +79,8 @@ export default function MapCanvas({
   const [viewSize, setViewSize] = useState({ width: 1, height: 1 })
   const [zoom, setZoom] = useState(1)
   const [origin, setOrigin] = useState({ x: 0, y: 0 })
+  const [lineOrigin, setLineOrigin] = useState(null)
+  const [hudPos, setHudPos] = useState({ x: 0, y: 0 })
   const ui = UI[theme] || UI.dark
   const skin = THEME_CANVAS[theme] || THEME_CANVAS.dark
 
@@ -89,6 +94,7 @@ export default function MapCanvas({
 
   const fittedOnce = useRef(false)
   const pinchStartZoom = useRef(1)
+  const lastStrokePt = useRef(null)
 
   const resetCamera = useCallback(
     (width, height, c, r, base) => {
@@ -180,22 +186,45 @@ export default function MapCanvas({
       const block = pointToBlock(x, y, false)
       onHover?.(block)
       if (!block) return
+      setHudPos({ x, y })
+      lastStrokePt.current = { x, y }
+      if (activeTool === TOOLS.LINE) setLineOrigin(block)
       onStrokeStart?.(clampStroke ? pointToBlock(x, y, true) : block)
     },
-    [pointToBlock, onHover, onStrokeStart, clampStroke],
+    [pointToBlock, onHover, onStrokeStart, clampStroke, activeTool],
   )
 
   const handleMove = useCallback(
     (x, y) => {
       const block = pointToBlock(x, y, false)
       onHover?.(block)
+      setHudPos({ x, y })
+      if (isStampTool(activeTool) && lastStrokePt.current) {
+        const blocks = blocksAlongCanvasSegment(
+          lastStrokePt.current.x,
+          lastStrokePt.current.y,
+          x,
+          y,
+          origin.x,
+          origin.y,
+          cellSize,
+          cols,
+          rows,
+          false,
+        )
+        lastStrokePt.current = { x, y }
+        if (blocks.length) onStrokeMove?.(blocks)
+        return
+      }
       const next = clampStroke ? pointToBlock(x, y, true) : block
       if (next) onStrokeMove?.(next)
     },
-    [pointToBlock, onHover, onStrokeMove, clampStroke],
+    [pointToBlock, onHover, onStrokeMove, clampStroke, activeTool, origin, cellSize, cols, rows],
   )
 
   const handleEnd = useCallback(() => {
+    lastStrokePt.current = null
+    setLineOrigin(null)
     onStrokeEnd?.()
   }, [onStrokeEnd])
 
@@ -275,6 +304,19 @@ export default function MapCanvas({
           <Circle cx={axes.axisX} cy={axes.axisY} r={axes.originR} color={skin.origin} />
         </Canvas>
       </GestureDetector>
+      {activeTool === TOOLS.LINE && lineOrigin && hoverBlock && !panMode ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.hud,
+            { left: hudPos.x, top: hudPos.y, backgroundColor: ui.panel, borderColor: ui.line },
+          ]}
+        >
+          <Text style={{ color: ui.ink, fontWeight: '700', fontSize: 12 }}>
+            {formatLineDistance(lineOrigin, hoverBlock)}
+          </Text>
+        </View>
+      ) : null}
       <View style={styles.fab} pointerEvents="box-none">
         <Pressable
           style={[styles.fabBtn, panMode && { borderColor: ui.brass, backgroundColor: ui.toolOn }]}
@@ -296,6 +338,14 @@ export default function MapCanvas({
 const styles = StyleSheet.create({
   wrap: { flex: 1, minHeight: 0, overflow: 'hidden' },
   canvas: { flex: 1 },
+  hud: {
+    position: 'absolute',
+    transform: [{ translateX: -50 }, { translateY: -36 }],
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
   fab: { position: 'absolute', right: 10, bottom: 10, gap: 6 },
   fabBtn: {
     width: 40,

@@ -168,6 +168,79 @@ export function pointerToBlockClamped(event, canvas, cellSize, originX, originY,
 }
 
 /**
+ * Bloco sob um ponto em CSS px do canvas (não o evento).
+ *
+ * @param {number} canvasX
+ * @param {number} canvasY
+ * @param {number} originX
+ * @param {number} originY
+ * @param {number} cellSize
+ * @param {number} cols
+ * @param {number} rows
+ * @param {boolean} [clamp]
+ * @returns {{ x: number, y: number } | null}
+ */
+export function canvasPointToBlock(canvasX, canvasY, originX, originY, cellSize, cols, rows, clamp = false) {
+  if (cellSize <= 0 || cols <= 0 || rows <= 0) return null
+  const x = Math.floor((canvasX - originX) / cellSize)
+  const y = Math.floor((canvasY - originY) / cellSize)
+  if (clamp) {
+    return {
+      x: Math.min(cols - 1, Math.max(0, x)),
+      y: Math.min(rows - 1, Math.max(0, y)),
+    }
+  }
+  if (x < 0 || y < 0 || x >= cols || y >= rows) return null
+  return { x, y }
+}
+
+/**
+ * Células que o cursor atravessa entre dois pontos do canvas.
+ * Passo menor que um bloco, para o traço seguir a curva e não virar corda reta.
+ *
+ * @returns {Array<{ x: number, y: number }>}
+ */
+export function blocksAlongCanvasSegment(
+  x0,
+  y0,
+  x1,
+  y1,
+  originX,
+  originY,
+  cellSize,
+  cols,
+  rows,
+  clamp = false,
+) {
+  if (cellSize <= 0 || cols <= 0 || rows <= 0) return []
+  const gx0 = (x0 - originX) / cellSize
+  const gy0 = (y0 - originY) / cellSize
+  const gx1 = (x1 - originX) / cellSize
+  const gy1 = (y1 - originY) / cellSize
+  const dgx = gx1 - gx0
+  const dgy = gy1 - gy0
+  const steps = Math.max(1, Math.ceil(Math.abs(dgx) + Math.abs(dgy)))
+  const out = []
+  let lastKey = ''
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i / steps
+    let x = Math.floor(gx0 + dgx * t)
+    let y = Math.floor(gy0 + dgy * t)
+    if (clamp) {
+      x = Math.min(cols - 1, Math.max(0, x))
+      y = Math.min(rows - 1, Math.max(0, y))
+    } else if (x < 0 || y < 0 || x >= cols || y >= rows) {
+      continue
+    }
+    const key = `${x},${y}`
+    if (key === lastKey) continue
+    lastKey = key
+    out.push({ x, y })
+  }
+  return out
+}
+
+/**
  * Ponto do canvas (CSS px) a partir de um PointerEvent / WheelEvent.
  * @param {PointerEvent | WheelEvent} event
  * @param {HTMLCanvasElement} canvas

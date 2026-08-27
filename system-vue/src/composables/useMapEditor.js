@@ -12,10 +12,13 @@ import { renderMapToCanvas } from '@/utils/drawMap.js'
 import { FILE_EXTENSION, parseMapFile, serializeMapFile } from '@/utils/fileFormat.js'
 import { safeFileName } from '@/utils/fileName.js'
 import { blockKey, withMirrorX } from '@/utils/coords.js'
-import { applyCells, clearGrid, inBounds, floodFillCells, setCell } from '@/utils/grid.js'
+import { applyCells, clearGrid, getGridSize, inBounds, floodFillCells, setCell } from '@/utils/grid.js'
 import { createHistory } from '@/utils/history.js'
 import {
   cloneLayerTree,
+  cloneNodeDeep,
+  insertNodeAfter,
+  flipNodeGrids,
   compositeLayerTree,
   countLayers,
   createGroup,
@@ -29,7 +32,7 @@ import {
   resizeLayerTree,
   setTreeVisible,
 } from '@/utils/layers.js'
-import { clipCells, expandBrush, getEllipseFilledCells, getEllipseOutlineCells, getLineCells, getShapeCells, originCenteredEllipseBox } from '@/utils/shapes.js'
+import { expandBrush, getLineCells, getPerfectShapeCells, getShapeCells } from '@/utils/shapes.js'
 
 const DEFAULT_WIDTH = 24
 const DEFAULT_HEIGHT = 16
@@ -60,6 +63,7 @@ export function useMapEditor() {
   const brushSize = ref(1)
   const hoverBlock = ref(null)
   const previewCells = ref([])
+  const paintDabs = ref([])
   const strokeOrigin = ref(null)
   const isDrawing = ref(false)
   const visitedInStroke = new Set()
@@ -78,18 +82,58 @@ export function useMapEditor() {
   const canUndo = ref(false)
   const canRedo = ref(false)
 
-  const history = createHistory(
-    MAX_HISTORY,
-    () => cloneLayerTree(layerTree.value),
-    (snapshot) => {
-      layerTree.value = snapshot
-      sceneTick.value += 1
-      if (!findNode(layerTree.value, activeNodeId.value)) {
-        const first = firstLayer(layerTree.value)
-        activeNodeId.value = first ? first.id : ''
-      }
-    },
-  )
+  function captureHistory() {
+    return {
+      layerTree: cloneLayerTree(layerTree.value),
+      width: mapWidth.value,
+      height: mapHeight.value,
+      scaleLocked: scaleLocked.value,
+      centerCellAxes: centerCellAxes.value,
+      activeNodeId: activeNodeId.value,
+    }
+  }
+
+  /**
+   * Restaura um snapshot. Cópia nova para não mutar o histórico.
+   * A escala entra no snapshot: sem ela o cartesiano ficava grande e a
+   * grade da camada pequena, e o pincel caía fora do array.
+   */
+  function restoreHistory(snapshot) {
+    const treeSource = Array.isArray(snapshot) ? snapshot : snapshot.layerTree
+    const tree = cloneLayerTree(treeSource)
+    layerTree.value = tree
+
+    let width
+    let height
+    if (!Array.isArray(snapshot) && snapshot.width && snapshot.height) {
+      width = snapshot.width
+      height = snapshot.height
+      scaleLocked.value = snapshot.scaleLocked
+      centerCellAxes.value = snapshot.centerCellAxes
+      activeNodeId.value = snapshot.activeNodeId
+    } else {
+      const first = firstLayer(tree)
+      const size = first ? getGridSize(first.grid) : { width: mapWidth.value, height: mapHeight.value }
+      width = size.width
+      height = size.height
+    }
+
+    mapWidth.value = width
+    mapHeight.value = height
+    scaleInput.x = width
+    scaleInput.y = height
+
+    if (!findNode(layerTree.value, activeNodeId.value)) {
+      const first = firstLayer(layerTree.value)
+      activeNodeId.value = first ? first.id : ''
+    }
+
+    paintDabs.value = []
+    cancelStroke()
+    sceneTick.value += 1
+  }
+
+  const history = createHistory(MAX_HISTORY, captureHistory, restoreHistory)
 
   function syncHistoryFlags() {
     canUndo.value = history.canUndo()
@@ -297,14 +341,23 @@ export function useMapEditor() {
 
   /**
    * Pinta ou apaga o carimbo do pincel na camada ativa, em coords do mundo.
-   * @param {object} layer
-   * @param {number} wx
-   * @param {number} wy
-   * @param {number} color  Cor a gravar (0 = vazio / borracha)
+   * Acrescenta em `dabs` só os blocos realmente gravados.
    */
-  function stampBrush(layer, wx, wy, color) {
+  function stampBrush(layer, wx, wy, color, dabs) {
+    const size = brushSize.value
+    if (size === 1 && !mirrorX.value) {
+      const lx = wx - layer.offsetX
+      const ly = wy - layer.offsetY
+      const key = blockKey(lx, ly)
+      if (visitedInStroke.has(key)) return
+      if (!inBounds(layer.grid, lx, ly)) return
+      visitedInStroke.add(key)
+      layer.grid[ly][lx] = color
+      dabs.push({ x: wx, y: wy, color })
+      return
+    }
     const stamps = withMirrorX(
-      expandBrush([{ x: wx, y: wy }], brushSize.value),
+      expandBrush([{ x: wx, y: wy }], size),
       mapWidth.value,
       mirrorX.value,
       centerCellAxes.value,
@@ -315,8 +368,13 @@ export function useMapEditor() {
       if (visitedInStroke.has(key)) continue
       if (!inBounds(layer.grid, local.x, local.y)) continue
       visitedInStroke.add(key)
-      setCell(layer.grid, local.x, local.y, color)
+      layer.grid[local.y][local.x] = color
+      dabs.push({ x: world.x, y: world.y, color })
     }
+  }
+
+  function flushDabs(dabs) {
+    if (dabs.length) paintDabs.value = dabs
   }
 
   function stampColor() {
@@ -351,9 +409,10 @@ export function useMapEditor() {
     if (isStampTool(activeTool.value)) {
       recordHistory()
       stampLast = { x: block.x, y: block.y }
-      stampBrush(layer, block.x, block.y, stampColor())
+      const dabs = []
+      stampBrush(layer, block.x, block.y, stampColor(), dabs)
+      flushDabs(dabs)
       previewCells.value = []
-      bumpScene()
       return
     }
 
@@ -403,14 +462,22 @@ export function useMapEditor() {
     if (!layer) return
 
     if (isStampTool(activeTool.value)) {
-      const from = stampLast || block
-      const path = getLineCells(from.x, from.y, block.x, block.y)
+      const points = Array.isArray(block) ? block : [block]
       const color = stampColor()
-      for (const cell of path) {
-        stampBrush(layer, cell.x, cell.y, color)
+      const dabs = []
+      for (const point of points) {
+        if (stampLast && stampLast.x === point.x && stampLast.y === point.y) continue
+        const from = stampLast || point
+        const jumped = Math.abs(point.x - from.x) > 1 || Math.abs(point.y - from.y) > 1
+        if (jumped) {
+          const path = getLineCells(from.x, from.y, point.x, point.y)
+          for (const cell of path) stampBrush(layer, cell.x, cell.y, color, dabs)
+        } else {
+          stampBrush(layer, point.x, point.y, color, dabs)
+        }
+        stampLast = { x: point.x, y: point.y }
       }
-      stampLast = { x: block.x, y: block.y }
-      bumpScene()
+      flushDabs(dabs)
       return
     }
 
@@ -433,6 +500,13 @@ export function useMapEditor() {
     }
 
     if (activeTool.value === TOOLS.FILL) {
+      cancelStroke()
+      return
+    }
+
+    if (isStampTool(activeTool.value)) {
+      bumpScene()
+      paintDabs.value = []
       cancelStroke()
       return
     }
@@ -463,29 +537,28 @@ export function useMapEditor() {
   }
 
   /**
-   * Elipse/círculo centrado na origem, com largura X e altura Y em blocos.
-   * @param {number} sizeX
-   * @param {number} sizeY
+   * Forma centrada na origem: escala, espessura em blocos e orientação do contorno.
+   * @param {{ tool: string, x: number, y: number, thickness: number, orientation: string }} opts
    */
-  function stampPerfectShape(sizeX, sizeY) {
+  function stampPerfectShape(opts) {
     const layer = activeLayer.value
     if (!layer) {
       fileMessage.value = 'Selecione uma camada para desenhar.'
       return
     }
 
-    const box = originCenteredEllipseBox(
-      mapWidth.value,
-      mapHeight.value,
-      sizeX,
-      sizeY,
-      centerCellAxes.value,
-    )
-    const raw = fillShapes.value
-      ? getEllipseFilledCells(box.x0, box.y0, box.x1, box.y1)
-      : getEllipseOutlineCells(box.x0, box.y0, box.x1, box.y1)
     const worlds = withMirrorX(
-      clipCells(expandBrush(raw, brushSize.value), mapWidth.value, mapHeight.value),
+      getPerfectShapeCells({
+        tool: opts.tool,
+        cols: mapWidth.value,
+        rows: mapHeight.value,
+        sizeX: opts.x,
+        sizeY: opts.y,
+        centerCellAxes: centerCellAxes.value,
+        filled: fillShapes.value,
+        thickness: opts.thickness,
+        orientation: opts.orientation,
+      }),
       mapWidth.value,
       mirrorX.value,
       centerCellAxes.value,
@@ -588,6 +661,36 @@ export function useMapEditor() {
     recordHistory()
     moveNodeAmongSiblings(layerTree.value, activeNodeId.value, dir)
     layerTree.value = layerTree.value.slice()
+    bumpScene()
+  }
+
+  function duplicateNode() {
+    const node = activeNode.value
+    if (!node) {
+      fileMessage.value = 'Selecione uma camada ou grupo para duplicar.'
+      return
+    }
+    recordHistory()
+    const copy = cloneNodeDeep(node)
+    if (!insertNodeAfter(layerTree.value, node.id, copy)) {
+      layerTree.value = [...layerTree.value, copy]
+    }
+    layerTree.value = layerTree.value.slice()
+    activeNodeId.value = copy.id
+    bumpScene()
+  }
+
+  /**
+   * @param {'h' | 'v'} axis
+   */
+  function flipActiveLayer(axis) {
+    const node = activeNode.value
+    if (!node) {
+      fileMessage.value = 'Selecione uma camada para inverter.'
+      return
+    }
+    recordHistory()
+    flipNodeGrids(node, axis)
     bumpScene()
   }
 
@@ -697,10 +800,13 @@ export function useMapEditor() {
       return
     }
     if (key === 'b') setTool(TOOLS.PENCIL)
-    if (key === 'e') setTool(TOOLS.ERASER)
+    if (key === 'r') setTool(TOOLS.ERASER)
     if (key === 't') setTool(TOOLS.FILL)
     if (key === 'l') setTool(TOOLS.LINE)
     if (key === 'c') setTool(TOOLS.CIRCLE)
+    if (key === 'q') setTool(TOOLS.SQUARE)
+    if (key === 'p') setTool(TOOLS.PENTAGON)
+    if (key === 'e') setTool(TOOLS.STAR)
     if (key === 'v') setTool(TOOLS.MOVE)
   }
 
@@ -718,7 +824,9 @@ export function useMapEditor() {
     brushSize,
     hoverBlock,
     previewCells,
+    paintDabs,
     isDrawing,
+    sceneTick,
     gridSize,
     activeToolMeta,
     fixedColors,
@@ -754,6 +862,8 @@ export function useMapEditor() {
     toggleNodeVisible,
     renameNode,
     shiftNode,
+    duplicateNode,
+    flipActiveLayer,
     toggleGroupCollapsed,
     undo,
     redo,

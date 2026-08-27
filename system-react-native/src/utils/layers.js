@@ -5,7 +5,7 @@
  * offsetX/Y só existem no arrasto ao vivo da ferramenta Mover; ao soltar,
  * o desenho é copiado na grade e o offset volta a 0.
  */
-import { cloneGrid, createGrid, resizeGrid, translateGrid } from './grid.js'
+import { cloneGrid, createGrid, flipGridHorizontal, flipGridVertical, resizeGrid, translateGrid } from './grid.js'
 
 /**
  * @typedef {object} LayerNode
@@ -92,6 +92,59 @@ export function cloneLayerTree(nodes) {
       ...node,
       grid: cloneGrid(node.grid),
     }
+  })
+}
+
+/**
+ * Cópia profunda de um nó, com ids novos (duplicar camada/grupo).
+ * @param {LayerNode | GroupNode} node
+ * @returns {LayerNode | GroupNode}
+ */
+export function cloneNodeDeep(node) {
+  if (node.type === 'group') {
+    return {
+      ...node,
+      id: newNodeId('group'),
+      name: `${node.name} cópia`.slice(0, 40),
+      children: (node.children || []).map(cloneNodeDeep),
+    }
+  }
+  return {
+    ...node,
+    id: newNodeId('layer'),
+    name: `${node.name} cópia`.slice(0, 40),
+    grid: cloneGrid(node.grid),
+  }
+}
+
+/**
+ * Insere `newNode` logo após o nó `targetId` na lista de irmãos.
+ * @param {Array<LayerNode | GroupNode>} nodes
+ * @param {string} targetId
+ * @param {LayerNode | GroupNode} newNode
+ * @returns {boolean}
+ */
+export function insertNodeAfter(nodes, targetId, newNode) {
+  const index = nodes.findIndex((node) => node.id === targetId)
+  if (index >= 0) {
+    nodes.splice(index + 1, 0, newNode)
+    return true
+  }
+  for (const node of nodes) {
+    if (node.type === 'group' && insertNodeAfter(node.children, targetId, newNode)) return true
+  }
+  return false
+}
+
+/**
+ * Espelha a grade da camada (ou de todas as camadas do grupo).
+ * @param {LayerNode | GroupNode} node
+ * @param {'h' | 'v'} axis
+ */
+export function flipNodeGrids(node, axis) {
+  const flip = axis === 'v' ? flipGridVertical : flipGridHorizontal
+  forEachLayer(node, (layer) => {
+    flip(layer.grid)
   })
 }
 

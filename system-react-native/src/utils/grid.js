@@ -38,6 +38,26 @@ export function cloneGrid(grid) {
 }
 
 /**
+ * Espelha a grade no eixo vertical (esquerda ↔ direita).
+ * @param {number[][]} grid
+ */
+export function flipGridHorizontal(grid) {
+  for (let y = 0; y < grid.length; y += 1) {
+    grid[y].reverse()
+  }
+  return grid
+}
+
+/**
+ * Espelha a grade no eixo horizontal (cima ↔ baixo).
+ * @param {number[][]} grid
+ */
+export function flipGridVertical(grid) {
+  grid.reverse()
+  return grid
+}
+
+/**
  * Devolve a largura (X) e a altura (Y) da grade.
  * @param {number[][]} grid
  * @returns {{ width: number, height: number }}

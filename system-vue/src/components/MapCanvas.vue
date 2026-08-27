@@ -22,8 +22,10 @@ import moveTudoIcon from '@/assets/move_gtudo.png'
 import expandIcon from '@/assets/expande.png'
 import minimoIcon from '@/assets/minimo.png'
 import { MAX_ZOOM, MIN_ZOOM } from '@/constants/limits.js'
-import { TOOLS } from '@/constants/tools.js'
+import { THEME_CANVAS } from '@/constants/palette.js'
+import { TOOLS, isStampTool } from '@/constants/tools.js'
 import {
+  blocksAlongCanvasSegment,
   centeredOrigin,
   eventToCanvasPoint,
   fitCellSize,
@@ -35,6 +37,7 @@ import {
 import { drawMap } from '@/utils/drawMap.js'
 import { makeIconCursor } from '@/utils/iconCursor.js'
 import { lodFactor } from '@/utils/lod.js'
+import { formatLineDistance } from '@/utils/shapes.js'
 
 const props = defineProps({
   grid: { type: Array, required: true },
@@ -49,6 +52,10 @@ const props = defineProps({
   theme: { type: String, default: 'dark' },
   /** Eixos pelo centro da coluna/linha do meio (só ímpar×ímpar). */
   centerCellAxes: { type: Boolean, default: false },
+  /** Incrementa quando a cena muda; evita deep-watch na grade. */
+  sceneTick: { type: Number, default: 0 },
+  /** Blocos recém-pintados pelo pincel/borracha (pintura incremental). */
+  paintDabs: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits({
@@ -74,6 +81,14 @@ const isFullscreen = ref(false)
 const canvasCursor = ref('crosshair')
 /** Cursor da tinta, um por tema (invertido no dark). */
 const fillCursorByTheme = { dark: '', light: '' }
+const lineOrigin = ref(null)
+const hudPos = ref({ x: 0, y: 0 })
+const lineHudText = computed(() => {
+  if (props.activeTool !== TOOLS.LINE || !lineOrigin.value || !props.hoverBlock || isPanning.value || panMode.value) {
+    return ''
+  }
+  return formatLineDistance(lineOrigin.value, props.hoverBlock)
+})
 
 const cols = computed(() => (props.grid[0] ? props.grid[0].length : 0))
 const rows = computed(() => props.grid.length)
@@ -107,6 +122,19 @@ const lod = computed(() => lodFactor(cellSize.value))
 
 let resizeObserver = null
 let panLast = { x: 0, y: 0 }
+let drawPending = false
+let lastCanvasCssW = 0
+let lastCanvasCssH = 0
+/** Último ponto CSS do pincel/borracha neste traço (caminho real do cursor). */
+let lastStrokeCanvas = null
+let stampStrokeActive = false
+/** Chrome/Edge: pointerrawupdate entrega amostras que o pointermove agrupa. */
+let stampUsesRawUpdate = false
+/** Pontos do cursor acumulados até o próximo frame. */
+const stampPointQueue = []
+let stampRaf = 0
+/** getBoundingClientRect cacheado durante o traço (caro em rawupdate). */
+let stampCanvasRect = null
 
 /**
  * Centraliza o mapa no zoom 1 (malha visível). Em escalas grandes o mapa
@@ -203,11 +231,17 @@ function draw() {
   const dpr = window.devicePixelRatio || 1
   const cssW = viewSize.value.width
   const cssH = viewSize.value.height
+  const bufW = Math.floor(cssW * dpr)
+  const bufH = Math.floor(cssH * dpr)
 
-  canvas.width = Math.floor(cssW * dpr)
-  canvas.height = Math.floor(cssH * dpr)
-  canvas.style.width = `${cssW}px`
-  canvas.style.height = `${cssH}px`
+  if (canvas.width !== bufW || canvas.height !== bufH || lastCanvasCssW !== cssW || lastCanvasCssH !== cssH) {
+    canvas.width = bufW
+    canvas.height = bufH
+    canvas.style.width = `${cssW}px`
+    canvas.style.height = `${cssH}px`
+    lastCanvasCssW = cssW
+    lastCanvasCssH = cssH
+  }
 
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -229,6 +263,44 @@ function draw() {
   })
 }
 
+function scheduleDraw() {
+  if (drawPending) return
+  drawPending = true
+  requestAnimationFrame(() => {
+    drawPending = false
+    draw()
+  })
+}
+
+function dabFill(colorId) {
+  if (!colorId) {
+    const skin = THEME_CANVAS[props.theme === 'light' ? 'light' : 'dark']
+    return skin.empty
+  }
+  const swatch = props.colors.find((item) => item.id === colorId)
+  return swatch ? swatch.hex : THEME_CANVAS.dark.empty
+}
+
+function paintDabsNow(dabs) {
+  const canvas = canvasRef.value
+  if (!canvas || !dabs.length) return
+  const dpr = window.devicePixelRatio || 1
+  const ctx = canvas.getContext('2d')
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  const size = cellSize.value
+  const ox = origin.value.x
+  const oy = origin.value.y
+  let lastColor = dabs[0].color
+  ctx.fillStyle = dabFill(lastColor)
+  for (const dab of dabs) {
+    if (dab.color !== lastColor) {
+      lastColor = dab.color
+      ctx.fillStyle = dabFill(lastColor)
+    }
+    ctx.fillRect(ox + dab.x * size, oy + dab.y * size, size, size)
+  }
+}
+
 /**
  * @param {PointerEvent} event
  */
@@ -244,6 +316,16 @@ function eventToBlock(event) {
   )
 }
 
+function updateHudPos(event) {
+  const wrap = wrapRef.value
+  if (!wrap) return
+  const rect = wrap.getBoundingClientRect()
+  hudPos.value = {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  }
+}
+
 function eventToBlockClamped(event) {
   return pointerToBlockClamped(
     event,
@@ -256,6 +338,71 @@ function eventToBlockClamped(event) {
   )
 }
 
+function coalescedPointerEvents(event) {
+  if (typeof event.getCoalescedEvents === 'function') {
+    const list = event.getCoalescedEvents()
+    if (list && list.length) return list
+  }
+  return [event]
+}
+
+function pointerToCachedCanvas(event) {
+  const rect = stampCanvasRect
+  if (rect) return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+  return eventToCanvasPoint(event, canvasRef.value)
+}
+
+function flushStampPath() {
+  stampRaf = 0
+  if (!stampStrokeActive || !lastStrokeCanvas || stampPointQueue.length === 0) {
+    stampPointQueue.length = 0
+    return
+  }
+  const ox = origin.value.x
+  const oy = origin.value.y
+  const size = cellSize.value
+  const c = cols.value
+  const r = rows.value
+  const blocks = []
+  let from = lastStrokeCanvas
+  for (let i = 0; i < stampPointQueue.length; i += 1) {
+    const to = stampPointQueue[i]
+    const piece = blocksAlongCanvasSegment(from.x, from.y, to.x, to.y, ox, oy, size, c, r, false)
+    for (let j = 0; j < piece.length; j += 1) blocks.push(piece[j])
+    from = to
+  }
+  lastStrokeCanvas = from
+  stampPointQueue.length = 0
+  if (blocks.length) emit('stroke-move', blocks)
+}
+
+function queueStampEvent(event) {
+  if (!stampStrokeActive || !canvasRef.value) return
+  const samples = coalescedPointerEvents(event)
+  for (let i = 0; i < samples.length; i += 1) {
+    stampPointQueue.push(pointerToCachedCanvas(samples[i]))
+  }
+  if (!stampRaf) stampRaf = requestAnimationFrame(flushStampPath)
+}
+
+function clearStampStroke() {
+  if (stampRaf) {
+    cancelAnimationFrame(stampRaf)
+    stampRaf = 0
+  }
+  if (stampStrokeActive) flushStampPath()
+  stampStrokeActive = false
+  lastStrokeCanvas = null
+  stampCanvasRect = null
+  stampPointQueue.length = 0
+}
+
+function onPointerRawUpdate(event) {
+  if (!stampStrokeActive || isPanning.value || panMode.value) return
+  if ((event.buttons & 1) !== 1) return
+  queueStampEvent(event)
+}
+
 /**
  * Direito = pan do mapa. Esquerdo = desenho, ou pan se o modo mover-tudo
  * estiver ligado.
@@ -265,7 +412,9 @@ function onPointerDown(event) {
   const leftPan = event.button === 0 && panMode.value
   if (event.button === 2 || leftPan) {
     event.preventDefault()
+    clearStampStroke()
     isPanning.value = true
+    lineOrigin.value = null
     panLast = eventToCanvasPoint(event, canvasRef.value)
     canvasRef.value.setPointerCapture(event.pointerId)
     return
@@ -276,6 +425,13 @@ function onPointerDown(event) {
   emit('hover', block)
   if (!block) return
   canvasRef.value.setPointerCapture(event.pointerId)
+  if (props.activeTool === TOOLS.LINE) {
+    lineOrigin.value = block
+    updateHudPos(event)
+  }
+  lastStrokeCanvas = eventToCanvasPoint(event, canvasRef.value)
+  stampCanvasRect = canvasRef.value.getBoundingClientRect()
+  stampStrokeActive = isStampTool(props.activeTool)
   emit('stroke-start', block)
 }
 
@@ -290,7 +446,7 @@ function onPointerMove(event) {
       y: origin.value.y + (point.y - panLast.y),
     }
     panLast = point
-    draw()
+    scheduleDraw()
     return
   }
 
@@ -299,14 +455,27 @@ function onPointerMove(event) {
     return
   }
 
-  const block = eventToBlock(event)
-  emit('hover', block)
-  if ((event.buttons & 1) !== 1) return
-  const next = props.clampStroke ? eventToBlockClamped(event) : block
-  if (next) emit('stroke-move', next)
+  if (props.activeTool === TOOLS.LINE) updateHudPos(event)
+
+  if ((event.buttons & 1) === 1) {
+    if (stampStrokeActive) {
+      if (!stampUsesRawUpdate) queueStampEvent(event)
+      return
+    }
+    const next = props.clampStroke ? eventToBlockClamped(event) : eventToBlock(event)
+    if (next) {
+      if (props.activeTool === TOOLS.LINE) emit('hover', next)
+      emit('stroke-move', next)
+    }
+    return
+  }
+
+  emit('hover', eventToBlock(event))
 }
 
 function onPointerUp() {
+  lineOrigin.value = null
+  clearStampStroke()
   if (isPanning.value) {
     isPanning.value = false
     return
@@ -315,6 +484,8 @@ function onPointerUp() {
 }
 
 function onPointerCancel() {
+  lineOrigin.value = null
+  clearStampStroke()
   isPanning.value = false
   emit('stroke-end')
 }
@@ -341,13 +512,22 @@ onMounted(() => {
   })
   if (wrapRef.value) resizeObserver.observe(wrapRef.value)
   canvasRef.value?.addEventListener('wheel', onWheel, { passive: false })
+  if (typeof window !== 'undefined' && 'onpointerrawupdate' in window) {
+    stampUsesRawUpdate = true
+    canvasRef.value?.addEventListener('pointerrawupdate', onPointerRawUpdate)
+  }
   document.addEventListener('fullscreenchange', syncFullscreen)
   document.addEventListener('webkitfullscreenchange', syncFullscreen)
 })
 
 onUnmounted(() => {
+  if (stampRaf) {
+    cancelAnimationFrame(stampRaf)
+    stampRaf = 0
+  }
   if (resizeObserver) resizeObserver.disconnect()
   canvasRef.value?.removeEventListener('wheel', onWheel)
+  canvasRef.value?.removeEventListener('pointerrawupdate', onPointerRawUpdate)
   document.removeEventListener('fullscreenchange', syncFullscreen)
   document.removeEventListener('webkitfullscreenchange', syncFullscreen)
   if (fullscreenElement()) {
@@ -365,9 +545,25 @@ watch(
 )
 
 watch(
-  () => [props.grid, props.previewCells, props.hoverBlock, props.brushSize, props.colors, props.theme, props.centerCellAxes, viewSize.value],
-  draw,
-  { deep: true },
+  () => [
+    props.sceneTick,
+    props.previewCells,
+    props.hoverBlock,
+    props.brushSize,
+    props.colors,
+    props.theme,
+    props.centerCellAxes,
+    viewSize.value,
+  ],
+  scheduleDraw,
+)
+
+watch(
+  () => props.paintDabs,
+  (dabs) => {
+    if (dabs && dabs.length) paintDabsNow(dabs)
+  },
+  { flush: 'sync' },
 )
 
 watch(
@@ -410,6 +606,13 @@ watch(
       @pointercancel="onPointerCancel"
       @contextmenu.prevent
     />
+    <div
+      v-if="lineHudText"
+      class="line-hud"
+      :style="{ left: `${hudPos.x}px`, top: `${hudPos.y}px` }"
+    >
+      {{ lineHudText }}
+    </div>
     <div class="zoom" aria-label="Controles de câmera">
       <button
         type="button"
@@ -458,6 +661,23 @@ watch(
 
 .map-canvas--pan {
   cursor: grabbing !important;
+}
+
+.line-hud {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, calc(-100% - 14px));
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
 }
 
 .zoom {

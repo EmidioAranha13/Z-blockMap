@@ -239,3 +239,48 @@ export function xyToBlockClamped(px, py, cellSize, originX, originY, cols, rows)
   const y = Math.min(rows - 1, Math.max(0, Math.floor((py - originY) / cellSize)))
   return { x, y }
 }
+
+/**
+ * Células que o cursor atravessa entre dois pontos do canvas.
+ *
+ * @returns {Array<{ x: number, y: number }>}
+ */
+export function blocksAlongCanvasSegment(
+  x0,
+  y0,
+  x1,
+  y1,
+  originX,
+  originY,
+  cellSize,
+  cols,
+  rows,
+  clamp = false,
+) {
+  if (cellSize <= 0 || cols <= 0 || rows <= 0) return []
+  const gx0 = (x0 - originX) / cellSize
+  const gy0 = (y0 - originY) / cellSize
+  const gx1 = (x1 - originX) / cellSize
+  const gy1 = (y1 - originY) / cellSize
+  const dgx = gx1 - gx0
+  const dgy = gy1 - gy0
+  const steps = Math.max(1, Math.ceil(Math.abs(dgx) + Math.abs(dgy)))
+  const out = []
+  let lastKey = ''
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i / steps
+    let x = Math.floor(gx0 + dgx * t)
+    let y = Math.floor(gy0 + dgy * t)
+    if (clamp) {
+      x = Math.min(cols - 1, Math.max(0, x))
+      y = Math.min(rows - 1, Math.max(0, y))
+    } else if (x < 0 || y < 0 || x >= cols || y >= rows) {
+      continue
+    }
+    const key = `${x},${y}`
+    if (key === lastKey) continue
+    lastKey = key
+    out.push({ x, y })
+  }
+  return out
+}

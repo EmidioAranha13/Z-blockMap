@@ -119,6 +119,9 @@ export default function EditorSheet({ visible, onClose, theme, editor }) {
                 <View style={styles.wrapBtns}>
                   <Ghost theme={theme} label="+ Camada" onPress={editor.addLayer} />
                   <Ghost theme={theme} label="+ Grupo" onPress={editor.addGroup} />
+                  <Ghost theme={theme} label="Duplicar" onPress={editor.duplicateNode} />
+                  <Ghost theme={theme} label="Inverter H" onPress={() => editor.flipActiveLayer('h')} />
+                  <Ghost theme={theme} label="Inverter V" onPress={() => editor.flipActiveLayer('v')} />
                   <Ghost theme={theme} label="Agrupar" onPress={editor.groupSelection} />
                   <Ghost theme={theme} label="↑" onPress={() => editor.shiftNode(1)} />
                   <Ghost theme={theme} label="↓" onPress={() => editor.shiftNode(-1)} />
