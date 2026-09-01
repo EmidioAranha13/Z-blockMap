@@ -12,7 +12,7 @@ import { TOOLS, getToolMeta, isStampTool } from '../constants/tools.js'
 import { FILE_EXTENSION, parseMapFile, serializeMapFile } from '../utils/fileFormat.js'
 import { safeFileName } from '../utils/fileName.js'
 import { blockKey, withMirrorX } from '../utils/coords.js'
-import { applyCells, clearGrid, getGridSize, inBounds, floodFillCells, setCell } from '../utils/grid.js'
+import { applyCells, clearGrid, cloneGrid, getGridSize, inBounds, floodFillCells, setCell } from '../utils/grid.js'
 import { createHistory } from '../utils/history.js'
 import {
   cloneLayerTree,
@@ -33,6 +33,7 @@ import {
   setTreeVisible,
 } from '../utils/layers.js'
 import { expandBrush, getLineCells, getPerfectShapeCells, getShapeCells } from '../utils/shapes.js'
+import { mapPivot, rotateGrid, snappedRotateDegrees } from '../utils/rotate.js'
 import { buildVisiblePixels } from '../utils/drawMap.js'
 
 const DEFAULT_WIDTH = 24
@@ -89,6 +90,10 @@ export function useMapEditor() {
   const strokeOrigin = useRef(null)
   const moveOrigin = useRef(null)
   const moveBaseOffsets = useRef([])
+  const rotateBases = useRef([])
+  const rotateStart = useRef(null)
+  const rotatePivotPt = useRef(null)
+  const rotateLastDeg = useRef(0)
   const layerTreeRef = useRef(layerTree)
   const activeNodeIdRef = useRef(activeNodeId)
   const mapSizeRef = useRef({ width: mapWidth, height: mapHeight, centerCellAxes, mirrorX, brushSize, fillShapes, activeTool, selectedColor })
@@ -227,6 +232,10 @@ export function useMapEditor() {
     stampLast.current = null
     moveOrigin.current = null
     moveBaseOffsets.current = []
+    rotateBases.current = []
+    rotateStart.current = null
+    rotatePivotPt.current = null
+    rotateLastDeg.current = 0
   }, [])
 
   const setBrushSize = useCallback((size) => {
@@ -295,6 +304,10 @@ export function useMapEditor() {
     stampLast.current = null
     moveOrigin.current = null
     moveBaseOffsets.current = []
+    rotateBases.current = []
+    rotateStart.current = null
+    rotatePivotPt.current = null
+    rotateLastDeg.current = 0
   }, [])
 
   const stampBrush = useCallback((layer, wx, wy, color) => {
@@ -328,6 +341,26 @@ export function useMapEditor() {
         bases.push({ id: layer.id, x: layer.offsetX, y: layer.offsetY })
       })
       moveBaseOffsets.current = bases
+      return
+    }
+
+    if (tool === TOOLS.ROTATE) {
+      if (!node) {
+        setFileMessage('Selecione uma camada para girar.')
+        cancelStroke()
+        return
+      }
+      recordHistory()
+      const { width, height, centerCellAxes: axes } = mapSizeRef.current
+      forEachLayer(node, (layer) => bakeLayerOffset(layer))
+      const bases = []
+      forEachLayer(node, (layer) => {
+        bases.push({ id: layer.id, grid: cloneGrid(layer.grid) })
+      })
+      rotateBases.current = bases
+      rotatePivotPt.current = mapPivot(width, height, axes)
+      rotateStart.current = { x: block.x, y: block.y }
+      rotateLastDeg.current = 0
       return
     }
 
@@ -389,6 +422,22 @@ export function useMapEditor() {
       return
     }
 
+    if (tool === TOOLS.ROTATE) {
+      if (!rotateStart.current || !rotatePivotPt.current) return
+      const deg = snappedRotateDegrees(rotateStart.current, block, rotatePivotPt.current)
+      if (deg === rotateLastDeg.current) return
+      rotateLastDeg.current = deg
+      const pivot = rotatePivotPt.current
+      for (const base of rotateBases.current) {
+        const layer = findNode(tree, base.id)
+        if (layer && layer.type === 'layer') {
+          layer.grid = rotateGrid(base.grid, deg, pivot.x, pivot.y)
+        }
+      }
+      bumpScene()
+      return
+    }
+
     const layer = node && node.type === 'layer' ? node : null
     if (!layer) return
 
@@ -428,6 +477,12 @@ export function useMapEditor() {
         const layer = findNode(tree, base.id)
         if (layer && layer.type === 'layer') bakeLayerOffset(layer)
       }
+      bumpScene()
+      cancelStroke()
+      return
+    }
+
+    if (tool === TOOLS.ROTATE) {
       bumpScene()
       cancelStroke()
       return

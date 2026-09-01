@@ -24,6 +24,8 @@ export const TOOLS = {
   FILL: 'fill',
   /** Move o desenho da camada dentro da grade (o que sair do mapa some). */
   MOVE: 'move',
+  /** Gira o desenho da camada em torno da origem, de 1 em 1 grau. */
+  ROTATE: 'rotate',
 }
 
 /** Formas desenhadas por arrasto (preview até soltar o ponteiro). */
@@ -136,6 +138,14 @@ export const MOVE_TOOL_META = [
     hint: 'Arraste para deslocar o desenho da camada (ou do grupo) dentro do mapa. O que sair da grade desaparece.',
     blurb: 'Desloca o desenho da camada dentro do mapa.',
   },
+  {
+    id: TOOLS.ROTATE,
+    label: 'Girar desenho',
+    shortcut: 'G',
+    glyph: '↻',
+    hint: 'Clique e segure o desenho, depois arraste para a esquerda ou direita. O giro é de 1° em 1° em torno da origem.',
+    blurb: 'Gira o desenho da camada em torno da origem, de 1° em 1°.',
+  },
 ]
 
 /** Primeira linha da grade compacta: pincel, borracha, tinta, forma perfeita, mover. */
@@ -171,5 +181,5 @@ export function isShapeTool(toolId) {
  * @param {string} toolId
  */
 export function isStrokeTool(toolId) {
-  return isShapeTool(toolId) || toolId === TOOLS.MOVE
+  return isShapeTool(toolId) || toolId === TOOLS.MOVE || toolId === TOOLS.ROTATE
 }

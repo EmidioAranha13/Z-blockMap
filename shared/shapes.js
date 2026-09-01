@@ -665,11 +665,12 @@ export function clampThickness(value, max) {
 
 /**
  * Distância euclidiana em blocos entre a origem e o destino da linha.
+ * A origem conta como 1 na UI (o bloco 0 do cartesiano); o valor interno não muda.
  * @param {{ x: number, y: number }} origin
  * @param {{ x: number, y: number }} current
  */
 export function formatLineDistance(origin, current) {
-  const dist = Math.hypot(current.x - origin.x, current.y - origin.y)
+  const dist = Math.hypot(current.x - origin.x, current.y - origin.y) + 1
   const text = dist.toLocaleString('pt-BR', { maximumFractionDigits: 1, minimumFractionDigits: 0 })
   const unit = Math.abs(dist - 1) < 0.05 ? 'bloco' : 'blocos'
   return `${text} ${unit}`

@@ -12,7 +12,7 @@ import { renderMapToCanvas } from '@/utils/drawMap.js'
 import { FILE_EXTENSION, parseMapFile, serializeMapFile } from '@/utils/fileFormat.js'
 import { safeFileName } from '@/utils/fileName.js'
 import { blockKey, withMirrorX } from '@/utils/coords.js'
-import { applyCells, clearGrid, getGridSize, inBounds, floodFillCells, setCell } from '@/utils/grid.js'
+import { applyCells, clearGrid, cloneGrid, getGridSize, inBounds, floodFillCells, setCell } from '@/utils/grid.js'
 import { createHistory } from '@/utils/history.js'
 import {
   cloneLayerTree,
@@ -33,6 +33,7 @@ import {
   setTreeVisible,
 } from '@/utils/layers.js'
 import { expandBrush, getLineCells, getPerfectShapeCells, getShapeCells } from '@/utils/shapes.js'
+import { mapPivot, rotateGrid, snappedRotateDegrees } from '@/utils/rotate.js'
 
 const DEFAULT_WIDTH = 24
 const DEFAULT_HEIGHT = 16
@@ -72,6 +73,10 @@ export function useMapEditor() {
 
   const moveOrigin = ref(null)
   const moveBaseOffsets = ref([])
+  const rotateBases = []
+  let rotateStart = null
+  let rotatePivotPt = null
+  let rotateLastDeg = 0
 
   const fixedColors = ref(cloneFixedColors())
   const customColors = ref([])
@@ -399,6 +404,25 @@ export function useMapEditor() {
       return
     }
 
+    if (activeTool.value === TOOLS.ROTATE) {
+      const node = activeNode.value
+      if (!node) {
+        fileMessage.value = 'Selecione uma camada para girar.'
+        cancelStroke()
+        return
+      }
+      recordHistory()
+      forEachLayer(node, (layer) => bakeLayerOffset(layer))
+      rotateBases.length = 0
+      forEachLayer(node, (layer) => {
+        rotateBases.push({ id: layer.id, grid: cloneGrid(layer.grid) })
+      })
+      rotatePivotPt = mapPivot(mapWidth.value, mapHeight.value, centerCellAxes.value)
+      rotateStart = { x: block.x, y: block.y }
+      rotateLastDeg = 0
+      return
+    }
+
     const layer = activeLayer.value
     if (!layer) {
       fileMessage.value = 'Selecione uma camada para desenhar.'
@@ -458,6 +482,21 @@ export function useMapEditor() {
       return
     }
 
+    if (activeTool.value === TOOLS.ROTATE) {
+      if (!rotateStart || !rotatePivotPt) return
+      const deg = snappedRotateDegrees(rotateStart, block, rotatePivotPt)
+      if (deg === rotateLastDeg) return
+      rotateLastDeg = deg
+      for (const base of rotateBases) {
+        const layer = findNode(layerTree.value, base.id)
+        if (layer && layer.type === 'layer') {
+          layer.grid = rotateGrid(base.grid, deg, rotatePivotPt.x, rotatePivotPt.y)
+        }
+      }
+      bumpScene()
+      return
+    }
+
     const layer = activeLayer.value
     if (!layer) return
 
@@ -499,6 +538,12 @@ export function useMapEditor() {
       return
     }
 
+    if (activeTool.value === TOOLS.ROTATE) {
+      bumpScene()
+      cancelStroke()
+      return
+    }
+
     if (activeTool.value === TOOLS.FILL) {
       cancelStroke()
       return
@@ -534,6 +579,10 @@ export function useMapEditor() {
     stampLast = null
     moveOrigin.value = null
     moveBaseOffsets.value = []
+    rotateBases.length = 0
+    rotateStart = null
+    rotatePivotPt = null
+    rotateLastDeg = 0
   }
 
   /**
@@ -808,6 +857,7 @@ export function useMapEditor() {
     if (key === 'p') setTool(TOOLS.PENTAGON)
     if (key === 'e') setTool(TOOLS.STAR)
     if (key === 'v') setTool(TOOLS.MOVE)
+    if (key === 'g') setTool(TOOLS.ROTATE)
   }
 
   return {

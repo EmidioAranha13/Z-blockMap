@@ -40,7 +40,11 @@ export default function ToolStrip({ activeTool, theme, onSetTool, onPerfect }) {
               activeTool === tool.id && { borderColor: ui.brass, backgroundColor: ui.toolOn },
             ]}
           >
-            <Image source={ICONS[tool.id]} style={[styles.icon, { tintColor: ui.iconTint }]} />
+            {ICONS[tool.id] ? (
+              <Image source={ICONS[tool.id]} style={[styles.icon, { tintColor: ui.iconTint }]} />
+            ) : tool.glyph ? (
+              <Text style={[styles.glyph, { color: ui.ink }]}>{tool.glyph}</Text>
+            ) : null}
             {tool.shortcut ? (
               <Text style={[styles.shortcut, { color: ui.inkDim, backgroundColor: ui.input }]}>{tool.shortcut}</Text>
             ) : null}

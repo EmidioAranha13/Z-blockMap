@@ -216,7 +216,7 @@ function onCompactClick(tool) {
   <section class="toolbar" aria-label="Ferramentas de desenho">
     <SideCollapse title="Ferramentas" storage-key="ferramentas">
       <div class="tool-list">
-        <div class="tool-grid" role="group" aria-label="Ferramentas">
+        <div class="tool-grid tool-grid--actions" role="group" aria-label="Ferramentas">
           <button
             v-for="tool in COMPACT_ACTION_META"
             :key="tool.id"
@@ -231,6 +231,7 @@ function onCompactClick(tool) {
             @blur="hideShapeTip"
           >
             <img v-if="TOOL_ICONS[tool.id]" class="tool-btn__icon" :src="TOOL_ICONS[tool.id]" alt="" />
+            <span v-else-if="tool.glyph" class="tool-btn__glyph">{{ tool.glyph }}</span>
             <kbd v-if="tool.shortcut">{{ tool.shortcut }}</kbd>
           </button>
         </div>
@@ -447,6 +448,10 @@ function onCompactClick(tool) {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
+}
+
+.tool-grid--actions {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .tool-btn {

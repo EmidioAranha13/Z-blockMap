@@ -20,6 +20,7 @@ import {
 import { TOOLS, isStampTool } from '../constants/tools.js'
 import { MAX_ZOOM, MIN_ZOOM } from '../constants/limits.js'
 import { formatLineDistance } from '../utils/shapes.js'
+import { formatRotateDegrees } from '../utils/rotate.js'
 import {
   blocksAlongCanvasSegment,
   centeredOrigin,
@@ -188,7 +189,7 @@ export default function MapCanvas({
       if (!block) return
       setHudPos({ x, y })
       lastStrokePt.current = { x, y }
-      if (activeTool === TOOLS.LINE) setLineOrigin(block)
+      if (activeTool === TOOLS.LINE || activeTool === TOOLS.ROTATE) setLineOrigin(block)
       onStrokeStart?.(clampStroke ? pointToBlock(x, y, true) : block)
     },
     [pointToBlock, onHover, onStrokeStart, clampStroke, activeTool],
@@ -304,7 +305,7 @@ export default function MapCanvas({
           <Circle cx={axes.axisX} cy={axes.axisY} r={axes.originR} color={skin.origin} />
         </Canvas>
       </GestureDetector>
-      {activeTool === TOOLS.LINE && lineOrigin && hoverBlock && !panMode ? (
+      { (activeTool === TOOLS.LINE || activeTool === TOOLS.ROTATE) && lineOrigin && hoverBlock && !panMode ? (
         <View
           pointerEvents="none"
           style={[
@@ -313,7 +314,9 @@ export default function MapCanvas({
           ]}
         >
           <Text style={{ color: ui.ink, fontWeight: '700', fontSize: 12 }}>
-            {formatLineDistance(lineOrigin, hoverBlock)}
+            {activeTool === TOOLS.ROTATE
+              ? formatRotateDegrees(lineOrigin, hoverBlock, cols, rows, centerCellAxes)
+              : formatLineDistance(lineOrigin, hoverBlock)}
           </Text>
         </View>
       ) : null}

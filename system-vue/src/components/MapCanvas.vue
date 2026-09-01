@@ -38,6 +38,7 @@ import { drawMap } from '@/utils/drawMap.js'
 import { makeIconCursor } from '@/utils/iconCursor.js'
 import { lodFactor } from '@/utils/lod.js'
 import { formatLineDistance } from '@/utils/shapes.js'
+import { formatRotateDegrees } from '@/utils/rotate.js'
 
 const props = defineProps({
   grid: { type: Array, required: true },
@@ -83,15 +84,26 @@ const canvasCursor = ref('crosshair')
 const fillCursorByTheme = { dark: '', light: '' }
 const lineOrigin = ref(null)
 const hudPos = ref({ x: 0, y: 0 })
-const lineHudText = computed(() => {
-  if (props.activeTool !== TOOLS.LINE || !lineOrigin.value || !props.hoverBlock || isPanning.value || panMode.value) {
-    return ''
-  }
-  return formatLineDistance(lineOrigin.value, props.hoverBlock)
-})
 
 const cols = computed(() => (props.grid[0] ? props.grid[0].length : 0))
 const rows = computed(() => props.grid.length)
+
+const lineHudText = computed(() => {
+  if (!lineOrigin.value || !props.hoverBlock || isPanning.value || panMode.value) return ''
+  if (props.activeTool === TOOLS.LINE) {
+    return formatLineDistance(lineOrigin.value, props.hoverBlock)
+  }
+  if (props.activeTool === TOOLS.ROTATE) {
+    return formatRotateDegrees(
+      lineOrigin.value,
+      props.hoverBlock,
+      cols.value,
+      rows.value,
+      props.centerCellAxes,
+    )
+  }
+  return ''
+})
 
 /**
  * Tamanho do bloco no zoom 1: no mínimo o suficiente para a grade aparecer.
@@ -425,7 +437,7 @@ function onPointerDown(event) {
   emit('hover', block)
   if (!block) return
   canvasRef.value.setPointerCapture(event.pointerId)
-  if (props.activeTool === TOOLS.LINE) {
+  if (props.activeTool === TOOLS.LINE || props.activeTool === TOOLS.ROTATE) {
     lineOrigin.value = block
     updateHudPos(event)
   }
@@ -455,7 +467,7 @@ function onPointerMove(event) {
     return
   }
 
-  if (props.activeTool === TOOLS.LINE) updateHudPos(event)
+  if (props.activeTool === TOOLS.LINE || props.activeTool === TOOLS.ROTATE) updateHudPos(event)
 
   if ((event.buttons & 1) === 1) {
     if (stampStrokeActive) {
@@ -464,7 +476,7 @@ function onPointerMove(event) {
     }
     const next = props.clampStroke ? eventToBlockClamped(event) : eventToBlock(event)
     if (next) {
-      if (props.activeTool === TOOLS.LINE) emit('hover', next)
+      if (props.activeTool === TOOLS.LINE || props.activeTool === TOOLS.ROTATE) emit('hover', next)
       emit('stroke-move', next)
     }
     return
