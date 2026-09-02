@@ -45,6 +45,7 @@ const props = defineProps({
   mapHeight: { type: Number, required: true },
   centerCellAxes: { type: Boolean, default: false },
   mirrorX: { type: Boolean, default: false },
+  mirrorY: { type: Boolean, default: false },
 })
 
 const emit = defineEmits({
@@ -52,6 +53,7 @@ const emit = defineEmits({
   'set-color': (colorId) => typeof colorId === 'number',
   'update:fillShapes': (value) => typeof value === 'boolean',
   'update:mirrorX': (value) => typeof value === 'boolean',
+  'update:mirrorY': (value) => typeof value === 'boolean',
   'commit-color': (hex) => typeof hex === 'string',
   rename: null,
   recolor: null,
@@ -278,14 +280,25 @@ function onCompactClick(tool) {
         Preencher forma
       </label>
 
-      <label class="fill">
-        <input
-          type="checkbox"
-          :checked="mirrorX"
-          @change="emit('update:mirrorX', $event.target.checked)"
-        />
-        Simetria espelhada
-      </label>
+      <div class="mirror">
+        <span class="mirror__title">Simetria espelhada</span>
+        <label class="fill">
+          <input
+            type="checkbox"
+            :checked="mirrorX"
+            @change="emit('update:mirrorX', $event.target.checked)"
+          />
+          Horizontal
+        </label>
+        <label class="fill">
+          <input
+            type="checkbox"
+            :checked="mirrorY"
+            @change="emit('update:mirrorY', $event.target.checked)"
+          />
+          Vertical
+        </label>
+      </div>
     </SideCollapse>
 
     <SideCollapse title="Cores" storage-key="cores">
@@ -504,6 +517,19 @@ kbd {
   align-items: center;
   gap: 8px;
   font-size: 0.85rem;
+}
+
+.mirror {
+  display: grid;
+  gap: 6px;
+}
+
+.mirror__title {
+  font-size: 0.85rem;
+}
+
+.mirror .fill {
+  padding-left: 2px;
 }
 
 .brush {

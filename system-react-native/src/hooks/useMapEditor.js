@@ -11,7 +11,7 @@ import { MAX_GRID_SIZE, MAX_HISTORY, RECENT_COLOR_SLOTS } from '../constants/lim
 import { TOOLS, getToolMeta, isStampTool } from '../constants/tools.js'
 import { FILE_EXTENSION, parseMapFile, serializeMapFile } from '../utils/fileFormat.js'
 import { safeFileName } from '../utils/fileName.js'
-import { blockKey, withMirrorX } from '../utils/coords.js'
+import { blockKey, withMirrors } from '../utils/coords.js'
 import { applyCells, clearGrid, cloneGrid, getGridSize, inBounds, floodFillCells, setCell } from '../utils/grid.js'
 import { createHistory } from '../utils/history.js'
 import {
@@ -69,6 +69,7 @@ export function useMapEditor() {
   const [activeTool, setActiveTool] = useState(TOOLS.PENCIL)
   const [fillShapes, setFillShapes] = useState(false)
   const [mirrorX, setMirrorX] = useState(false)
+  const [mirrorY, setMirrorY] = useState(false)
   const [brushSize, setBrushSizeState] = useState(1)
   const [hoverBlock, setHoverBlock] = useState(null)
   const [previewCells, setPreviewCells] = useState([])
@@ -96,7 +97,7 @@ export function useMapEditor() {
   const rotateLastDeg = useRef(0)
   const layerTreeRef = useRef(layerTree)
   const activeNodeIdRef = useRef(activeNodeId)
-  const mapSizeRef = useRef({ width: mapWidth, height: mapHeight, centerCellAxes, mirrorX, brushSize, fillShapes, activeTool, selectedColor })
+  const mapSizeRef = useRef({ width: mapWidth, height: mapHeight, centerCellAxes, mirrorX, mirrorY, brushSize, fillShapes, activeTool, selectedColor })
 
   layerTreeRef.current = layerTree
   activeNodeIdRef.current = activeNodeId
@@ -106,6 +107,7 @@ export function useMapEditor() {
     scaleLocked,
     centerCellAxes,
     mirrorX,
+    mirrorY,
     brushSize,
     fillShapes,
     activeTool,
@@ -315,8 +317,8 @@ export function useMapEditor() {
   }, [])
 
   const stampBrush = useCallback((layer, wx, wy, color) => {
-    const { width, mirrorX: mx, centerCellAxes: axes, brushSize: size } = mapSizeRef.current
-    const stamps = withMirrorX(expandBrush([{ x: wx, y: wy }], size), width, mx, axes)
+    const { width, height, mirrorX: mx, mirrorY: my, centerCellAxes: axes, brushSize: size } = mapSizeRef.current
+    const stamps = withMirrors(expandBrush([{ x: wx, y: wy }], size), width, height, mx, my, axes)
     for (const world of stamps) {
       const local = toLocal(layer, world.x, world.y)
       const key = blockKey(local.x, local.y)
@@ -333,7 +335,7 @@ export function useMapEditor() {
     visitedInStroke.current.clear()
     const tree = layerTreeRef.current
     const node = findNode(tree, activeNodeIdRef.current)
-    const { activeTool: tool, selectedColor: color, width, height, fillShapes: fill, mirrorX: mx, centerCellAxes: axes, brushSize: size } =
+    const { activeTool: tool, selectedColor: color, width, height, fillShapes: fill, mirrorX: mx, mirrorY: my, centerCellAxes: axes, brushSize: size } =
       mapSizeRef.current
 
     if (tool === TOOLS.MOVE) {
@@ -390,7 +392,7 @@ export function useMapEditor() {
       if (cells.length === 0) return
       recordHistory()
       const worlds = cells.map((cell) => ({ x: cell.x + layer.offsetX, y: cell.y + layer.offsetY }))
-      const mirrored = withMirrorX(worlds, width, mx, axes)
+      const mirrored = withMirrors(worlds, width, height, mx, my, axes)
       const locals = []
       for (const world of mirrored) {
         const at = toLocal(layer, world.x, world.y)
@@ -402,11 +404,11 @@ export function useMapEditor() {
       return
     }
 
-    setPreviewCells(withMirrorX(getShapeCells(tool, block, block, fill, width, height, size), width, mx, axes))
+    setPreviewCells(withMirrors(getShapeCells(tool, block, block, fill, width, height, size), width, height, mx, my, axes))
   }, [recordHistory, stampBrush, bumpScene, bumpPixels, cancelStroke])
 
   const continueStroke = useCallback((block) => {
-    const { activeTool: tool, selectedColor: color, width, height, fillShapes: fill, mirrorX: mx, centerCellAxes: axes, brushSize: size } =
+    const { activeTool: tool, selectedColor: color, width, height, fillShapes: fill, mirrorX: mx, mirrorY: my, centerCellAxes: axes, brushSize: size } =
       mapSizeRef.current
     const tree = layerTreeRef.current
     const node = findNode(tree, activeNodeIdRef.current)
@@ -467,7 +469,7 @@ export function useMapEditor() {
     if (tool === TOOLS.FILL) return
 
     setPreviewCells(
-      withMirrorX(getShapeCells(tool, strokeOrigin.current, block, fill, width, height, size), width, mx, axes),
+      withMirrors(getShapeCells(tool, strokeOrigin.current, block, fill, width, height, size), width, height, mx, my, axes),
     )
   }, [stampBrush, bumpScene, bumpPixels])
 
@@ -519,9 +521,9 @@ export function useMapEditor() {
       setFileMessage('Selecione uma camada para desenhar.')
       return
     }
-    const { width, height, fillShapes: fill, mirrorX: mx, centerCellAxes: axes, selectedColor: color } =
+    const { width, height, fillShapes: fill, mirrorX: mx, mirrorY: my, centerCellAxes: axes, selectedColor: color } =
       mapSizeRef.current
-    const worlds = withMirrorX(
+    const worlds = withMirrors(
       getPerfectShapeCells({
         tool: opts.tool,
         cols: width,
@@ -534,7 +536,9 @@ export function useMapEditor() {
         orientation: opts.orientation,
       }),
       width,
+      height,
       mx,
+      my,
       axes,
     )
     if (worlds.length === 0) return
@@ -793,6 +797,8 @@ export function useMapEditor() {
     setFillShapes,
     mirrorX,
     setMirrorX,
+    mirrorY,
+    setMirrorY,
     brushSize,
     hoverBlock,
     previewCells,

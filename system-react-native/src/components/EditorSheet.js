@@ -205,9 +205,16 @@ export default function EditorSheet({ visible, onClose, theme, editor }) {
                   <Switch value={editor.fillShapes} onValueChange={editor.setFillShapes} />
                   <Text style={{ color: ui.ink }}>Preencher forma</Text>
                 </View>
-                <View style={styles.row}>
-                  <Switch value={editor.mirrorX} onValueChange={editor.setMirrorX} />
-                  <Text style={{ color: ui.ink }}>Simetria espelhada</Text>
+                <Text style={{ color: ui.ink, fontWeight: '700', marginTop: 4 }}>Simetria espelhada</Text>
+                <View style={styles.col}>
+                  <View style={styles.row}>
+                    <Switch value={editor.mirrorX} onValueChange={editor.setMirrorX} />
+                    <Text style={{ color: ui.ink }}>Horizontal</Text>
+                  </View>
+                  <View style={styles.row}>
+                    <Switch value={editor.mirrorY} onValueChange={editor.setMirrorY} />
+                    <Text style={{ color: ui.ink }}>Vertical</Text>
+                  </View>
                 </View>
                 <Text style={{ color: ui.inkDim }}>Pixels</Text>
                 <View style={styles.row}>
@@ -282,6 +289,7 @@ const styles = StyleSheet.create({
   tab: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1 },
   body: { minHeight: 220 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  col: { gap: 6 },
   lock: { width: 40, height: 40, borderRadius: 8, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   apply: { borderRadius: 8, padding: 12, alignItems: 'center' },
   applyTxt: { color: '#1a150c', fontWeight: '700' },

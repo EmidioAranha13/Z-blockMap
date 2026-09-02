@@ -72,6 +72,22 @@ export function mirrorWorldX(x, cols, centerCellAxes) {
 }
 
 /**
+ * Espelha a linha Y pelo eixo horizontal do cartesiano (cima ↔ baixo).
+ *
+ * @param {number} y
+ * @param {number} rows
+ * @param {boolean} centerCellAxes
+ * @returns {number}
+ */
+export function mirrorWorldY(y, rows, centerCellAxes) {
+  const mid = Math.floor(rows / 2)
+  if (centerCellAxes && rows % 2 === 1) {
+    return 2 * mid - y
+  }
+  return 2 * mid - y - 1
+}
+
+/**
  * Acrescenta os blocos espelhados em X. Não altera Y.
  *
  * @param {Array<{ x: number, y: number }>} cells
@@ -97,6 +113,53 @@ export function withMirrorX(cells, cols, enabled, centerCellAxes) {
     seen.add(mirrorKey)
     out.push({ x: mx, y: cell.y })
   }
+  return out
+}
+
+/**
+ * Acrescenta os blocos espelhados em Y. Não altera X.
+ * Q1 ↔ Q4 e Q2 ↔ Q3.
+ *
+ * @param {Array<{ x: number, y: number }>} cells
+ * @param {number} rows
+ * @param {boolean} enabled
+ * @param {boolean} centerCellAxes
+ * @returns {Array<{ x: number, y: number }>}
+ */
+export function withMirrorY(cells, rows, enabled, centerCellAxes) {
+  if (!enabled || rows <= 0) return cells
+  const seen = new Set()
+  const out = []
+  for (const cell of cells) {
+    const key = `${cell.x},${cell.y}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      out.push(cell)
+    }
+    const my = mirrorWorldY(cell.y, rows, centerCellAxes)
+    if (my < 0 || my >= rows) continue
+    const mirrorKey = `${cell.x},${my}`
+    if (seen.has(mirrorKey)) continue
+    seen.add(mirrorKey)
+    out.push({ x: cell.x, y: my })
+  }
+  return out
+}
+
+/**
+ * Aplica simetria horizontal e/ou vertical. Com as duas, gera as quatro cópias.
+ *
+ * @param {Array<{ x: number, y: number }>} cells
+ * @param {number} cols
+ * @param {number} rows
+ * @param {boolean} mirrorX
+ * @param {boolean} mirrorY
+ * @param {boolean} centerCellAxes
+ */
+export function withMirrors(cells, cols, rows, mirrorX, mirrorY, centerCellAxes) {
+  let out = cells
+  if (mirrorX) out = withMirrorX(out, cols, true, centerCellAxes)
+  if (mirrorY) out = withMirrorY(out, rows, true, centerCellAxes)
   return out
 }
 

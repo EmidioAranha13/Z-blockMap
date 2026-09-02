@@ -11,7 +11,7 @@ import { downloadBlob, readTextFile } from '@/utils/download.js'
 import { renderMapToCanvas } from '@/utils/drawMap.js'
 import { FILE_EXTENSION, parseMapFile, serializeMapFile } from '@/utils/fileFormat.js'
 import { safeFileName } from '@/utils/fileName.js'
-import { blockKey, withMirrorX } from '@/utils/coords.js'
+import { blockKey, withMirrors } from '@/utils/coords.js'
 import { applyCells, clearGrid, cloneGrid, getGridSize, inBounds, floodFillCells } from '@/utils/grid.js'
 import { createHistory } from '@/utils/history.js'
 import {
@@ -80,6 +80,7 @@ export function useMapEditor() {
   const activeTool = ref(TOOLS.PENCIL)
   const fillShapes = ref(false)
   const mirrorX = ref(false)
+  const mirrorY = ref(false)
   const brushSize = ref(1)
   const hoverBlock = ref(null)
   const previewCells = shallowRef([])
@@ -354,13 +355,24 @@ export function useMapEditor() {
     previewCells.value = cells.length ? markRaw(cells) : emptyPreview
   }
 
+  function applyMirrors(cells) {
+    return withMirrors(
+      cells,
+      mapWidth.value,
+      mapHeight.value,
+      mirrorX.value,
+      mirrorY.value,
+      centerCellAxes.value,
+    )
+  }
+
   function refreshShapePreview(current) {
     if (!strokeOrigin.value) {
       setPreview([])
       return
     }
     setPreview(
-      withMirrorX(
+      applyMirrors(
         getShapeCells(
           activeTool.value,
           strokeOrigin.value,
@@ -370,9 +382,6 @@ export function useMapEditor() {
           mapHeight.value,
           brushSize.value,
         ),
-        mapWidth.value,
-        mirrorX.value,
-        centerCellAxes.value,
       ),
     )
   }
@@ -383,7 +392,7 @@ export function useMapEditor() {
    */
   function stampBrush(layer, wx, wy, color, dabs) {
     const size = brushSize.value
-    if (size === 1 && !mirrorX.value) {
+    if (size === 1 && !mirrorX.value && !mirrorY.value) {
       const lx = wx - layer.offsetX
       const ly = wy - layer.offsetY
       const key = blockKey(lx, ly)
@@ -394,12 +403,7 @@ export function useMapEditor() {
       dabs.push({ x: wx, y: wy, color })
       return
     }
-    const stamps = withMirrorX(
-      expandBrush([{ x: wx, y: wy }], size),
-      mapWidth.value,
-      mirrorX.value,
-      centerCellAxes.value,
-    )
+    const stamps = applyMirrors(expandBrush([{ x: wx, y: wy }], size))
     for (const world of stamps) {
       const local = toLocal(layer, world.x, world.y)
       const key = blockKey(local.x, local.y)
@@ -482,7 +486,7 @@ export function useMapEditor() {
         x: cell.x + layer.offsetX,
         y: cell.y + layer.offsetY,
       }))
-      const mirrored = withMirrorX(worlds, mapWidth.value, mirrorX.value, centerCellAxes.value)
+      const mirrored = applyMirrors(worlds)
       const locals = []
       for (const world of mirrored) {
         const at = toLocal(layer, world.x, world.y)
@@ -629,7 +633,7 @@ export function useMapEditor() {
       return
     }
 
-    const worlds = withMirrorX(
+    const worlds = applyMirrors(
       getPerfectShapeCells({
         tool: opts.tool,
         cols: mapWidth.value,
@@ -641,9 +645,6 @@ export function useMapEditor() {
         thickness: opts.thickness,
         orientation: opts.orientation,
       }),
-      mapWidth.value,
-      mirrorX.value,
-      centerCellAxes.value,
     )
     if (worlds.length === 0) return
 
@@ -904,6 +905,7 @@ export function useMapEditor() {
     selectedColorInfo,
     fillShapes,
     mirrorX,
+    mirrorY,
     brushSize,
     hoverBlock,
     previewCells,

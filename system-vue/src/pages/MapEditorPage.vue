@@ -28,6 +28,7 @@ const {
   selectedColorInfo,
   fillShapes,
   mirrorX,
+  mirrorY,
   brushSize,
   hoverBlock,
   previewCells,
@@ -193,6 +194,7 @@ onUnmounted(() => {
             :active-tool="activeTool"
             v-model:fill-shapes="fillShapes"
             v-model:mirror-x="mirrorX"
+            v-model:mirror-y="mirrorY"
             :selected-color="selectedColor"
             :selected-color-info="selectedColorInfo"
             :fixed-colors="fixedColors"
