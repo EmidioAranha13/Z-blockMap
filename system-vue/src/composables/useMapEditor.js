@@ -3,7 +3,7 @@
  *
  * Grade do cartesiano, camadas/grupos, ferramentas, cores, preview e Undo/Redo.
  */
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, markRaw, reactive, ref, shallowRef, toRaw, watch } from 'vue'
 import { cloneFixedColors, findColor, normalizeHex } from '@/constants/palette.js'
 import { MAX_GRID_SIZE, MAX_HISTORY, RECENT_COLOR_SLOTS } from '@/constants/limits.js'
 import { TOOLS, getToolMeta, isStampTool } from '@/constants/tools.js'
@@ -12,7 +12,7 @@ import { renderMapToCanvas } from '@/utils/drawMap.js'
 import { FILE_EXTENSION, parseMapFile, serializeMapFile } from '@/utils/fileFormat.js'
 import { safeFileName } from '@/utils/fileName.js'
 import { blockKey, withMirrorX } from '@/utils/coords.js'
-import { applyCells, clearGrid, cloneGrid, getGridSize, inBounds, floodFillCells, setCell } from '@/utils/grid.js'
+import { applyCells, clearGrid, cloneGrid, getGridSize, inBounds, floodFillCells } from '@/utils/grid.js'
 import { createHistory } from '@/utils/history.js'
 import {
   cloneLayerTree,
@@ -38,6 +38,25 @@ import { mapPivot, rotateGrid, snappedRotateDegrees } from '@/utils/rotate.js'
 const DEFAULT_WIDTH = 24
 const DEFAULT_HEIGHT = 16
 const CUSTOM_ID_START = 100
+const emptyPreview = markRaw([])
+
+/**
+ * Árvore sem Proxy: o composite lê offsets/células sem o Vue rastrear 120 mil itens.
+ * A tela atualiza pelo sceneTick, não por cada célula.
+ */
+function freezeTree(nodes) {
+  const arr = toRaw(nodes)
+  const out = new Array(arr.length)
+  for (let i = 0; i < arr.length; i += 1) {
+    const node = toRaw(arr[i])
+    if (node.type === 'group') {
+      out[i] = { ...node, children: freezeTree(node.children) }
+    } else {
+      out[i] = node
+    }
+  }
+  return out
+}
 
 /**
  * Cria o estado e as ações do editor.
@@ -63,8 +82,8 @@ export function useMapEditor() {
   const mirrorX = ref(false)
   const brushSize = ref(1)
   const hoverBlock = ref(null)
-  const previewCells = ref([])
-  const paintDabs = ref([])
+  const previewCells = shallowRef([])
+  const paintDabs = shallowRef([])
   const strokeOrigin = ref(null)
   const isDrawing = ref(false)
   const visitedInStroke = new Set()
@@ -77,6 +96,7 @@ export function useMapEditor() {
   let rotateStart = null
   let rotatePivotPt = null
   let rotateLastDeg = 0
+  let sceneRaf = 0
 
   const fixedColors = ref(cloneFixedColors())
   const customColors = ref([])
@@ -151,7 +171,11 @@ export function useMapEditor() {
   }
 
   function bumpScene() {
-    sceneTick.value += 1
+    if (sceneRaf) return
+    sceneRaf = requestAnimationFrame(() => {
+      sceneRaf = 0
+      sceneTick.value += 1
+    })
   }
 
   const gridSize = computed(() => ({
@@ -161,7 +185,7 @@ export function useMapEditor() {
 
   const grid = computed(() => {
     sceneTick.value
-    return compositeLayerTree(layerTree.value, mapWidth.value, mapHeight.value)
+    return compositeLayerTree(freezeTree(layerTree.value), mapWidth.value, mapHeight.value)
   })
 
   const activeNode = computed(() => findNode(layerTree.value, activeNodeId.value))
@@ -240,7 +264,7 @@ export function useMapEditor() {
     mapWidth.value = width
     mapHeight.value = height
     resizeLayerTree(layerTree.value, width, height)
-    previewCells.value = []
+    previewCells.value = emptyPreview
     hoverBlock.value = null
     bumpScene()
   }
@@ -315,32 +339,41 @@ export function useMapEditor() {
     forEachLayer(node, (layer) => {
       clearGrid(layer.grid, 0)
     })
-    previewCells.value = []
+    previewCells.value = emptyPreview
     bumpScene()
   }
 
   function setHover(block) {
+    const prev = hoverBlock.value
+    if (!block && !prev) return
+    if (block && prev && block.x === prev.x && block.y === prev.y) return
     hoverBlock.value = block
+  }
+
+  function setPreview(cells) {
+    previewCells.value = cells.length ? markRaw(cells) : emptyPreview
   }
 
   function refreshShapePreview(current) {
     if (!strokeOrigin.value) {
-      previewCells.value = []
+      setPreview([])
       return
     }
-    previewCells.value = withMirrorX(
-      getShapeCells(
-        activeTool.value,
-        strokeOrigin.value,
-        current,
-        fillShapes.value,
+    setPreview(
+      withMirrorX(
+        getShapeCells(
+          activeTool.value,
+          strokeOrigin.value,
+          current,
+          fillShapes.value,
+          mapWidth.value,
+          mapHeight.value,
+          brushSize.value,
+        ),
         mapWidth.value,
-        mapHeight.value,
-        brushSize.value,
+        mirrorX.value,
+        centerCellAxes.value,
       ),
-      mapWidth.value,
-      mirrorX.value,
-      centerCellAxes.value,
     )
   }
 
@@ -379,7 +412,7 @@ export function useMapEditor() {
   }
 
   function flushDabs(dabs) {
-    if (dabs.length) paintDabs.value = dabs
+    if (dabs.length) paintDabs.value = markRaw(dabs)
   }
 
   function stampColor() {
@@ -436,7 +469,7 @@ export function useMapEditor() {
       const dabs = []
       stampBrush(layer, block.x, block.y, stampColor(), dabs)
       flushDabs(dabs)
-      previewCells.value = []
+      previewCells.value = emptyPreview
       return
     }
 
@@ -456,7 +489,7 @@ export function useMapEditor() {
         if (inBounds(layer.grid, at.x, at.y)) locals.push(at)
       }
       applyCells(layer.grid, locals, selectedColor.value)
-      previewCells.value = []
+      previewCells.value = emptyPreview
       bumpScene()
       return
     }
@@ -574,7 +607,7 @@ export function useMapEditor() {
   function cancelStroke() {
     isDrawing.value = false
     strokeOrigin.value = null
-    previewCells.value = []
+    previewCells.value = emptyPreview
     visitedInStroke.clear()
     stampLast = null
     moveOrigin.value = null
@@ -752,13 +785,13 @@ export function useMapEditor() {
 
   function undo() {
     if (!history.undo()) return
-    previewCells.value = []
+    previewCells.value = emptyPreview
     syncHistoryFlags()
   }
 
   function redo() {
     if (!history.redo()) return
-    previewCells.value = []
+    previewCells.value = emptyPreview
     syncHistoryFlags()
   }
 
@@ -808,7 +841,7 @@ export function useMapEditor() {
       nextCustomId = maxCustom + 1
       history.reset()
       syncHistoryFlags()
-      previewCells.value = []
+      previewCells.value = emptyPreview
       bumpScene()
       fileMessage.value = 'Mapa carregado.'
     } catch (error) {

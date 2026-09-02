@@ -142,6 +142,7 @@ export default function App() {
           <View style={styles.stage}>
             <MapCanvas
               grid={editor.grid}
+              sceneTick={editor.sceneTick}
               previewCells={editor.previewCells}
               hoverBlock={editor.hoverBlock}
               colors={editor.allColors}

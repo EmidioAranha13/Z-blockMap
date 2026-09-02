@@ -5,7 +5,7 @@
  * offsetX/Y só existem no arrasto ao vivo da ferramenta Mover; ao soltar,
  * o desenho é copiado na grade e o offset volta a 0.
  */
-import { cloneGrid, createGrid, flipGridHorizontal, flipGridVertical, resizeGrid, translateGrid } from '@/utils/grid.js'
+import { clearGrid, cloneGrid, createGrid, flipGridHorizontal, flipGridVertical, resizeGrid, translateGrid } from '@/utils/grid.js'
 
 /**
  * @typedef {object} LayerNode
@@ -283,23 +283,66 @@ export function resizeLayerTree(nodes, width, height) {
  * @returns {number[][]}
  */
 export function compositeLayerTree(nodes, width, height) {
-  const out = createGrid(width, height, 0)
   const layers = visibleLayers(nodes)
-  for (const layer of layers) {
-    const rows = layer.grid.length
-    const cols = rows > 0 ? layer.grid[0].length : 0
-    for (let y = 0; y < rows; y += 1) {
-      const wy = y + layer.offsetY
-      if (wy < 0 || wy >= height) continue
+  if (layers.length === 1) {
+    const layer = layers[0]
+    const ox = layer.offsetX || 0
+    const oy = layer.offsetY || 0
+    if (ox === 0 && oy === 0) {
+      const rows = layer.grid.length
+      const cols = rows > 0 ? layer.grid[0].length : 0
+      if (cols === width && rows === height) return layer.grid
+    }
+  }
+
+  const out = acquireComposite(width, height)
+  for (let i = 0; i < layers.length; i += 1) {
+    blitLayer(out, layers[i], width, height)
+  }
+  return out
+}
+
+let compositeBuf = null
+let compositeW = 0
+let compositeH = 0
+
+function acquireComposite(width, height) {
+  if (compositeBuf && compositeW === width && compositeH === height) {
+    clearGrid(compositeBuf, 0)
+    return compositeBuf
+  }
+  compositeBuf = createGrid(width, height, 0)
+  compositeW = width
+  compositeH = height
+  return compositeBuf
+}
+
+function blitLayer(out, layer, width, height) {
+  const src = layer.grid
+  const rows = src.length
+  const cols = rows > 0 ? src[0].length : 0
+  const ox = layer.offsetX || 0
+  const oy = layer.offsetY || 0
+  for (let y = 0; y < rows; y += 1) {
+    const wy = y + oy
+    if (wy < 0 || wy >= height) continue
+    const srcRow = src[y]
+    const dstRow = out[wy]
+    if (ox === 0) {
+      const xEnd = cols < width ? cols : width
+      for (let x = 0; x < xEnd; x += 1) {
+        const value = srcRow[x]
+        if (value !== 0) dstRow[x] = value
+      }
+    } else {
       for (let x = 0; x < cols; x += 1) {
-        const wx = x + layer.offsetX
+        const wx = x + ox
         if (wx < 0 || wx >= width) continue
-        const value = layer.grid[y][x]
-        if (value !== 0) out[wy][wx] = value
+        const value = srcRow[x]
+        if (value !== 0) dstRow[wx] = value
       }
     }
   }
-  return out
 }
 
 /**

@@ -178,6 +178,10 @@ export function useMapEditor() {
     setSceneTick((n) => n + 1)
   }, [])
 
+  const bumpPixels = useCallback(() => {
+    setSceneTick((n) => n + 1)
+  }, [])
+
   const grid = useMemo(
     () => compositeLayerTree(layerTree, mapWidth, mapHeight),
     [layerTree, mapWidth, mapHeight, sceneTick],
@@ -376,7 +380,7 @@ export function useMapEditor() {
       stampLast.current = { x: block.x, y: block.y }
       stampBrush(layer, block.x, block.y, tool === TOOLS.ERASER ? 0 : color)
       setPreviewCells([])
-      bumpScene()
+      bumpPixels()
       return
     }
 
@@ -399,7 +403,7 @@ export function useMapEditor() {
     }
 
     setPreviewCells(withMirrorX(getShapeCells(tool, block, block, fill, width, height, size), width, mx, axes))
-  }, [recordHistory, stampBrush, bumpScene, cancelStroke])
+  }, [recordHistory, stampBrush, bumpScene, bumpPixels, cancelStroke])
 
   const continueStroke = useCallback((block) => {
     const { activeTool: tool, selectedColor: color, width, height, fillShapes: fill, mirrorX: mx, centerCellAxes: axes, brushSize: size } =
@@ -418,7 +422,7 @@ export function useMapEditor() {
           layer.offsetY = base.y + dy
         }
       }
-      bumpScene()
+      bumpPixels()
       return
     }
 
@@ -434,7 +438,7 @@ export function useMapEditor() {
           layer.grid = rotateGrid(base.grid, deg, pivot.x, pivot.y)
         }
       }
-      bumpScene()
+      bumpPixels()
       return
     }
 
@@ -456,7 +460,7 @@ export function useMapEditor() {
         }
         stampLast.current = { x: point.x, y: point.y }
       }
-      bumpScene()
+      bumpPixels()
       return
     }
 
@@ -465,7 +469,7 @@ export function useMapEditor() {
     setPreviewCells(
       withMirrorX(getShapeCells(tool, strokeOrigin.current, block, fill, width, height, size), width, mx, axes),
     )
-  }, [stampBrush, bumpScene])
+  }, [stampBrush, bumpScene, bumpPixels])
 
   const endStroke = useCallback(() => {
     const { activeTool: tool, selectedColor: color } = mapSizeRef.current
@@ -793,6 +797,7 @@ export function useMapEditor() {
     hoverBlock,
     previewCells,
     isDrawing,
+    sceneTick,
     gridSize: { width: mapWidth, height: mapHeight },
     activeToolMeta,
     fixedColors,
@@ -815,7 +820,13 @@ export function useMapEditor() {
     renameColor,
     recolor,
     clearMap,
-    setHover: setHoverBlock,
+    setHover: (block) => {
+      setHoverBlock((prev) => {
+        if (!block && !prev) return prev
+        if (block && prev && block.x === prev.x && block.y === prev.y) return prev
+        return block
+      })
+    },
     beginStroke,
     continueStroke,
     endStroke,

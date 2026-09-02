@@ -41,6 +41,7 @@ import { clipCells, expandBrush } from '@/utils/shapes.js'
  * @param {'dark' | 'light'} [options.theme]
  * @param {number} [options.pixelRatio] devicePixelRatio, para o downsample
  * @param {boolean} [options.centerCellAxes] eixos pelo bloco central (só ímpar×ímpar)
+ * @param {HTMLCanvasElement} [options.contentBitmap] raster 1:1 já pronto (pan/hover/zoom)
  */
 export function drawMap(ctx, options) {
   const {
@@ -85,45 +86,61 @@ export function drawMap(ctx, options) {
   const visH = Math.max(0, endY - startY)
 
   if (visW > 0 && visH > 0) {
-    paintCells(
-      ctx,
-      grid,
-      colors,
-      startX,
-      startY,
-      visW,
-      visH,
-      originX,
-      originY,
-      cellSize,
-      theme,
-      cols,
-      rows,
-      pixelRatio,
-    )
+    const dpr = Math.max(1, pixelRatio)
+    const destWcss = visW * cellSize
+    const destHcss = visH * cellSize
+    const destDevW = Math.max(1, Math.round(destWcss * dpr))
+    const destDevH = Math.max(1, Math.round(destHcss * dpr))
+    const canBlit = options.contentBitmap && destDevW >= visW && destDevH >= visH
+
+    if (canBlit) {
+      blitBitmap(
+        ctx,
+        options.contentBitmap,
+        startX,
+        startY,
+        visW,
+        visH,
+        originX,
+        originY,
+        cellSize,
+        cols,
+        rows,
+        pixelRatio,
+      )
+    } else {
+      paintCells(
+        ctx,
+        grid,
+        colors,
+        startX,
+        startY,
+        visW,
+        visH,
+        originX,
+        originY,
+        cellSize,
+        theme,
+        cols,
+        rows,
+        pixelRatio,
+      )
+    }
   }
 
   if (showPreview && previewCells.length > 0) {
-    const previewRects = cellsToLodRects(previewCells, lod, cols, rows)
-    ctx.fillStyle = skin.previewFill
-    for (const rect of previewRects) {
-      ctx.fillRect(
-        originX + rect.x * cellSize,
-        originY + rect.y * cellSize,
-        rect.w * cellSize,
-        rect.h * cellSize,
-      )
-    }
-    ctx.strokeStyle = skin.previewStroke
-    ctx.lineWidth = Math.max(1, cellSize * lod * 0.08)
-    for (const rect of previewRects) {
-      ctx.strokeRect(
-        originX + rect.x * cellSize + 0.5,
-        originY + rect.y * cellSize + 0.5,
-        rect.w * cellSize - 1,
-        rect.h * cellSize - 1,
-      )
-    }
+    paintPreview(
+      ctx,
+      previewCells,
+      originX,
+      originY,
+      cellSize,
+      cols,
+      rows,
+      skin,
+      pixelRatio,
+      lod,
+    )
   }
 
   if (showHover && hoverBlock) {
@@ -149,6 +166,143 @@ export function drawMap(ctx, options) {
   }
 
   ctx.restore()
+}
+
+/**
+ * Raster 1 pixel por célula no canvas informado (mapa inteiro).
+ * Reutilizado no cache da tela ao vivo: pan/hover/zoom só fazem blit.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number[][]} grid
+ * @param {Array<{ id: number, hex: string }>} colors
+ * @param {'dark' | 'light'} theme
+ */
+export function rasterizeGridToCanvas(ctx, grid, colors, theme) {
+  const rows = grid.length
+  const cols = rows > 0 ? grid[0].length : 0
+  if (!cols || !rows) return
+  const rgbOf = makeRgbLookup(colors, theme)
+  const image = acquireImageData(ctx, cols, rows)
+  const data = image.data
+  let i = 0
+  for (let y = 0; y < rows; y += 1) {
+    const row = grid[y]
+    for (let x = 0; x < cols; x += 1) {
+      const rgb = rgbOf(row[x])
+      data[i] = rgb.r
+      data[i + 1] = rgb.g
+      data[i + 2] = rgb.b
+      data[i + 3] = 255
+      i += 4
+    }
+  }
+  ctx.putImageData(image, 0, 0)
+}
+
+let pooledImage = null
+
+function acquireImageData(ctx, width, height) {
+  if (pooledImage && pooledImage.width === width && pooledImage.height === height) {
+    return pooledImage
+  }
+  pooledImage = ctx.createImageData(width, height)
+  return pooledImage
+}
+
+function blitBitmap(
+  ctx,
+  bitmap,
+  startX,
+  startY,
+  visW,
+  visH,
+  originX,
+  originY,
+  cellSize,
+  cols,
+  rows,
+  pixelRatio,
+) {
+  const dpr = Math.max(1, pixelRatio)
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.beginPath()
+  ctx.rect(originX * dpr, originY * dpr, cols * cellSize * dpr, rows * cellSize * dpr)
+  ctx.clip()
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(
+    bitmap,
+    startX,
+    startY,
+    visW,
+    visH,
+    (originX + startX * cellSize) * dpr,
+    (originY + startY * cellSize) * dpr,
+    visW * cellSize * dpr,
+    visH * cellSize * dpr,
+  )
+  ctx.restore()
+}
+
+function paintPreview(ctx, previewCells, originX, originY, cellSize, cols, rows, skin, pixelRatio, lod) {
+  if (previewCells.length > 64) {
+    const overlay = getOverlayCanvas(cols, rows)
+    const octx = overlay.ctx
+    octx.clearRect(0, 0, cols, rows)
+    octx.fillStyle = skin.previewFill
+    for (let i = 0; i < previewCells.length; i += 1) {
+      const cell = previewCells[i]
+      octx.fillRect(cell.x, cell.y, 1, 1)
+    }
+    const dpr = Math.max(1, pixelRatio)
+    ctx.save()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(
+      overlay.canvas,
+      originX * dpr,
+      originY * dpr,
+      cols * cellSize * dpr,
+      rows * cellSize * dpr,
+    )
+    ctx.restore()
+    return
+  }
+
+  const previewRects = cellsToLodRects(previewCells, lod, cols, rows)
+  ctx.fillStyle = skin.previewFill
+  for (const rect of previewRects) {
+    ctx.fillRect(
+      originX + rect.x * cellSize,
+      originY + rect.y * cellSize,
+      rect.w * cellSize,
+      rect.h * cellSize,
+    )
+  }
+  ctx.strokeStyle = skin.previewStroke
+  ctx.lineWidth = Math.max(1, cellSize * lod * 0.08)
+  for (const rect of previewRects) {
+    ctx.strokeRect(
+      originX + rect.x * cellSize + 0.5,
+      originY + rect.y * cellSize + 0.5,
+      rect.w * cellSize - 1,
+      rect.h * cellSize - 1,
+    )
+  }
+}
+
+let overlayScratch = null
+
+function getOverlayCanvas(width, height) {
+  if (!overlayScratch) {
+    const canvas = document.createElement('canvas')
+    overlayScratch = { canvas, ctx: canvas.getContext('2d') }
+  }
+  if (overlayScratch.canvas.width !== width || overlayScratch.canvas.height !== height) {
+    overlayScratch.canvas.width = width
+    overlayScratch.canvas.height = height
+  }
+  return overlayScratch
 }
 
 /**
@@ -220,17 +374,18 @@ function paintCells(
  * @param {CanvasRenderingContext2D} ctx
  */
 function paintFullRes(ctx, grid, startX, startY, visW, visH, rgbOf) {
-  const image = ctx.createImageData(visW, visH)
+  const image = acquireImageData(ctx, visW, visH)
   const data = image.data
+  let i = 0
   for (let y = 0; y < visH; y += 1) {
     const row = grid[startY + y]
     for (let x = 0; x < visW; x += 1) {
-      const { r, g, b } = rgbOf(row[startX + x])
-      const i = (y * visW + x) * 4
-      data[i] = r
-      data[i + 1] = g
-      data[i + 2] = b
+      const rgb = rgbOf(row[startX + x])
+      data[i] = rgb.r
+      data[i + 1] = rgb.g
+      data[i + 2] = rgb.b
       data[i + 3] = 255
+      i += 4
     }
   }
   return image

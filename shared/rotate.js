@@ -64,8 +64,36 @@ export function formatRotateDegrees(start, current, cols, rows, centerCellAxes) 
   return `${deg}°`
 }
 
+function allocGrid(rows, cols, fillValue = 0) {
+  const out = new Array(rows)
+  for (let y = 0; y < rows; y += 1) {
+    out[y] = new Array(cols).fill(fillValue)
+  }
+  return out
+}
+
+function paintedBounds(src, cols, rows) {
+  let minX = cols
+  let minY = rows
+  let maxX = -1
+  let maxY = -1
+  for (let y = 0; y < rows; y += 1) {
+    const row = src[y]
+    for (let x = 0; x < cols; x += 1) {
+      if (row[x] === 0) continue
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    }
+  }
+  if (maxX < 0) return null
+  return { minX, minY, maxX, maxY }
+}
+
 /**
  * Gira a grade `angleDeg` em torno do pivô. Ângulo 0 devolve uma cópia.
+ * Só varre a região que o desenho ocupava (e o AABB após o giro).
  *
  * @param {number[][]} src
  * @param {number} angleDeg
@@ -76,14 +104,17 @@ export function formatRotateDegrees(start, current, cols, rows, centerCellAxes) 
 export function rotateGrid(src, angleDeg, ox, oy) {
   const rows = src.length
   const cols = rows ? src[0].length : 0
-  const out = []
-  for (let y = 0; y < rows; y += 1) {
-    out.push(new Array(cols).fill(0))
-  }
+  const out = allocGrid(rows, cols, 0)
   if (!rows || !cols) return out
+
+  const bounds = paintedBounds(src, cols, rows)
+  if (!bounds) return out
+
   if (!angleDeg) {
-    for (let y = 0; y < rows; y += 1) {
-      for (let x = 0; x < cols; x += 1) out[y][x] = src[y][x]
+    for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+      const srcRow = src[y]
+      const dstRow = out[y]
+      for (let x = bounds.minX; x <= bounds.maxX; x += 1) dstRow[x] = srcRow[x]
     }
     return out
   }
@@ -91,16 +122,44 @@ export function rotateGrid(src, angleDeg, ox, oy) {
   const rad = (angleDeg * Math.PI) / 180
   const cos = Math.cos(rad)
   const sin = Math.sin(rad)
-  for (let y = 0; y < rows; y += 1) {
+
+  let destMinX = cols
+  let destMinY = rows
+  let destMaxX = -1
+  let destMaxY = -1
+  const corners = [
+    [bounds.minX, bounds.minY],
+    [bounds.maxX + 1, bounds.minY],
+    [bounds.minX, bounds.maxY + 1],
+    [bounds.maxX + 1, bounds.maxY + 1],
+  ]
+  for (let i = 0; i < 4; i += 1) {
+    const dx = corners[i][0] - ox
+    const dy = corners[i][1] - oy
+    const fx = ox + dx * cos - dy * sin
+    const fy = oy + dx * sin + dy * cos
+    if (fx < destMinX) destMinX = fx
+    if (fx > destMaxX) destMaxX = fx
+    if (fy < destMinY) destMinY = fy
+    if (fy > destMaxY) destMaxY = fy
+  }
+
+  const x0 = Math.max(0, Math.floor(destMinX) - 1)
+  const y0 = Math.max(0, Math.floor(destMinY) - 1)
+  const x1 = Math.min(cols - 1, Math.ceil(destMaxX) + 1)
+  const y1 = Math.min(rows - 1, Math.ceil(destMaxY) + 1)
+
+  for (let y = y0; y <= y1; y += 1) {
     const dy = y + 0.5 - oy
-    for (let x = 0; x < cols; x += 1) {
+    const dstRow = out[y]
+    for (let x = x0; x <= x1; x += 1) {
       const dx = x + 0.5 - ox
       const sx = ox + dx * cos + dy * sin
       const sy = oy - dx * sin + dy * cos
       const ix = Math.floor(sx)
       const iy = Math.floor(sy)
       if (iy >= 0 && iy < rows && ix >= 0 && ix < cols) {
-        out[y][x] = src[iy][ix]
+        dstRow[x] = src[iy][ix]
       }
     }
   }

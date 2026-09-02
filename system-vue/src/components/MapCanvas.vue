@@ -34,7 +34,7 @@ import {
   pointerToBlockClamped,
   readableCellSize,
 } from '@/utils/coords.js'
-import { drawMap } from '@/utils/drawMap.js'
+import { drawMap, rasterizeGridToCanvas } from '@/utils/drawMap.js'
 import { makeIconCursor } from '@/utils/iconCursor.js'
 import { lodFactor } from '@/utils/lod.js'
 import { formatLineDistance } from '@/utils/shapes.js'
@@ -137,6 +137,11 @@ let panLast = { x: 0, y: 0 }
 let drawPending = false
 let lastCanvasCssW = 0
 let lastCanvasCssH = 0
+let lastEmittedLod = -1
+/** Bitmap 1 px/célula do mapa composto — pan/hover/zoom só fazem blit. */
+const mapBitmap = document.createElement('canvas')
+const mapBitmapCtx = mapBitmap.getContext('2d', { alpha: false }) || mapBitmap.getContext('2d')
+let mapBitmapKey = ''
 /** Último ponto CSS do pincel/borracha neste traço (caminho real do cursor). */
 let lastStrokeCanvas = null
 let stampStrokeActive = false
@@ -257,7 +262,10 @@ function draw() {
 
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  emit('lod-change', lod.value)
+  if (lod.value !== lastEmittedLod) {
+    lastEmittedLod = lod.value
+    emit('lod-change', lod.value)
+  }
   drawMap(ctx, {
     grid: props.grid,
     colors: props.colors,
@@ -272,7 +280,33 @@ function draw() {
     theme: props.theme === 'light' ? 'light' : 'dark',
     pixelRatio: dpr,
     centerCellAxes: props.centerCellAxes,
+    contentBitmap: syncMapBitmap(),
   })
+}
+
+function colorSignature(colors) {
+  let sig = ''
+  for (let i = 0; i < colors.length; i += 1) {
+    sig += colors[i].id
+    sig += colors[i].hex
+  }
+  return sig
+}
+
+function syncMapBitmap() {
+  const c = cols.value
+  const r = rows.value
+  if (c <= 0 || r <= 0 || !mapBitmapCtx) return null
+  const theme = props.theme === 'light' ? 'light' : 'dark'
+  const key = `${props.sceneTick}|${c}x${r}|${theme}|${colorSignature(props.colors)}`
+  if (key === mapBitmapKey && mapBitmap.width === c && mapBitmap.height === r) {
+    return mapBitmap
+  }
+  if (mapBitmap.width !== c) mapBitmap.width = c
+  if (mapBitmap.height !== r) mapBitmap.height = r
+  rasterizeGridToCanvas(mapBitmapCtx, props.grid, props.colors, theme)
+  mapBitmapKey = key
+  return mapBitmap
 }
 
 function scheduleDraw() {
@@ -302,14 +336,20 @@ function paintDabsNow(dabs) {
   const size = cellSize.value
   const ox = origin.value.x
   const oy = origin.value.y
+  const bitmap = syncMapBitmap()
   let lastColor = dabs[0].color
-  ctx.fillStyle = dabFill(lastColor)
+  const fill = dabFill(lastColor)
+  ctx.fillStyle = fill
+  if (bitmap && mapBitmapCtx) mapBitmapCtx.fillStyle = fill
   for (const dab of dabs) {
     if (dab.color !== lastColor) {
       lastColor = dab.color
-      ctx.fillStyle = dabFill(lastColor)
+      const next = dabFill(lastColor)
+      ctx.fillStyle = next
+      if (bitmap && mapBitmapCtx) mapBitmapCtx.fillStyle = next
     }
     ctx.fillRect(ox + dab.x * size, oy + dab.y * size, size, size)
+    if (bitmap && mapBitmapCtx) mapBitmapCtx.fillRect(dab.x, dab.y, 1, 1)
   }
 }
 
@@ -557,15 +597,17 @@ watch(
 )
 
 watch(
-  () => [
-    props.sceneTick,
-    props.previewCells,
-    props.hoverBlock,
-    props.brushSize,
-    props.colors,
-    props.theme,
-    props.centerCellAxes,
-    viewSize.value,
+  [
+    () => props.sceneTick,
+    () => (props.hoverBlock ? props.hoverBlock.x : -1),
+    () => (props.hoverBlock ? props.hoverBlock.y : -1),
+    () => props.previewCells,
+    () => props.brushSize,
+    () => props.theme,
+    () => props.centerCellAxes,
+    () => viewSize.value.width,
+    () => viewSize.value.height,
+    () => props.colors,
   ],
   scheduleDraw,
 )

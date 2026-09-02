@@ -15,16 +15,10 @@
 export function createGrid(width, height, fillValue = 0) {
   const cols = Math.max(1, Math.floor(width))
   const rows = Math.max(1, Math.floor(height))
-  const grid = []
-
+  const grid = new Array(rows)
   for (let y = 0; y < rows; y += 1) {
-    const row = []
-    for (let x = 0; x < cols; x += 1) {
-      row.push(fillValue)
-    }
-    grid.push(row)
+    grid[y] = new Array(cols).fill(fillValue)
   }
-
   return grid
 }
 
@@ -34,7 +28,12 @@ export function createGrid(width, height, fillValue = 0) {
  * @returns {number[][]}
  */
 export function cloneGrid(grid) {
-  return grid.map((row) => row.slice())
+  const rows = grid.length
+  const out = new Array(rows)
+  for (let y = 0; y < rows; y += 1) {
+    out[y] = grid[y].slice()
+  }
+  return out
 }
 
 /**
@@ -76,8 +75,9 @@ export function getGridSize(grid) {
  * @returns {boolean}
  */
 export function inBounds(grid, x, y) {
-  const { width, height } = getGridSize(grid)
-  return x >= 0 && y >= 0 && x < width && y < height
+  const height = grid.length
+  if (height === 0) return false
+  return x >= 0 && y >= 0 && x < grid[0].length && y < height
 }
 
 /**
@@ -120,20 +120,24 @@ export function floodFillCells(grid, startX, startY, newValue) {
   const target = grid[startY][startX]
   if (target === newValue) return []
 
-  const { width, height } = getGridSize(grid)
+  const height = grid.length
+  const width = grid[0].length
   const cells = []
-  const stack = [{ x: startX, y: startY }]
-  const seen = new Set()
+  const stackX = [startX]
+  const stackY = [startY]
+  const seen = new Uint8Array(width * height)
 
-  while (stack.length > 0) {
-    const { x, y } = stack.pop()
-    const key = `${x},${y}`
-    if (seen.has(key)) continue
+  while (stackX.length > 0) {
+    const x = stackX.pop()
+    const y = stackY.pop()
     if (x < 0 || y < 0 || x >= width || y >= height) continue
+    const idx = y * width + x
+    if (seen[idx]) continue
     if (grid[y][x] !== target) continue
-    seen.add(key)
+    seen[idx] = 1
     cells.push({ x, y })
-    stack.push({ x: x + 1, y }, { x: x - 1, y }, { x, y: y + 1 }, { x, y: y - 1 })
+    stackX.push(x + 1, x - 1, x, x)
+    stackY.push(y, y, y + 1, y - 1)
   }
 
   return cells
@@ -158,9 +162,7 @@ export function applyCells(grid, cells, value) {
  */
 export function clearGrid(grid, fillValue = 0) {
   for (let y = 0; y < grid.length; y += 1) {
-    for (let x = 0; x < grid[y].length; x += 1) {
-      grid[y][x] = fillValue
-    }
+    grid[y].fill(fillValue)
   }
 }
 

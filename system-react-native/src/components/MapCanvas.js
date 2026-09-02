@@ -69,6 +69,7 @@ export default function MapCanvas({
   theme,
   centerCellAxes,
   panMode,
+  sceneTick = 0,
   onTogglePanMode,
   onHover,
   onStrokeStart,
@@ -143,28 +144,15 @@ export default function MapCanvas({
   }, [])
 
   const range = visibleRange(origin.x, origin.y, cellSize, viewSize.width, viewSize.height, cols, rows)
-  const destDevW = Math.max(1, Math.round(range.visW * cellSize))
-  const destDevH = Math.max(1, Math.round(range.visH * cellSize))
-  const packed = useMemo(
-    () =>
-      buildVisiblePixels(
-        grid,
-        colors,
-        theme,
-        range.startX,
-        range.startY,
-        range.visW,
-        range.visH,
-        destDevW,
-        destDevH,
-      ),
-    [grid, colors, theme, range.startX, range.startY, range.visW, range.visH, destDevW, destDevH],
-  )
+  const packed = useMemo(() => {
+    if (cols <= 0 || rows <= 0) return null
+    return buildVisiblePixels(grid, colors, theme, 0, 0, cols, rows, cols, rows)
+  }, [sceneTick, grid, colors, theme, cols, rows])
   const image = useMemo(() => pixelsToImage(packed), [packed])
-  const destX = origin.x + range.startX * cellSize
-  const destY = origin.y + range.startY * cellSize
-  const destW = range.visW * cellSize
-  const destH = range.visH * cellSize
+  const destX = origin.x
+  const destY = origin.y
+  const destW = cols * cellSize
+  const destH = rows * cellSize
 
   const preview = overlayRects(previewCells || [], origin.x, origin.y, cellSize, lod, cols, rows)
   const hover = hoverOverlay(hoverBlock, brushSize, origin.x, origin.y, cellSize, lod, cols, rows)
