@@ -1,5 +1,5 @@
 /**
- * Giro de uma camada em torno da origem do cartesiano.
+ * Giro do desenho em torno do próprio centro (não da origem do cartesiano).
  * O ângulo é em graus inteiros; a rasterização é vizinho mais próximo.
  */
 
@@ -38,9 +38,8 @@ function wrapSigned180(deg) {
 }
 
 /**
- * Graus inteiros entre o clique e o bloco atual.
- * Longe da origem: o arrasto gira em torno do cartesiano.
- * Perto da origem: 1 bloco horizontal = 1°.
+ * Graus inteiros entre o clique e o bloco atual, em torno do pivô do desenho.
+ * Perto do pivô: 1 bloco horizontal = 1°.
  *
  * @param {{ x: number, y: number }} start
  * @param {{ x: number, y: number }} current
@@ -55,12 +54,11 @@ export function snappedRotateDegrees(start, current, pivot) {
 /**
  * @param {{ x: number, y: number }} start
  * @param {{ x: number, y: number }} current
- * @param {number} cols
- * @param {number} rows
- * @param {boolean} centerCellAxes
+ * @param {{ x: number, y: number } | null} pivot
  */
-export function formatRotateDegrees(start, current, cols, rows, centerCellAxes) {
-  const deg = snappedRotateDegrees(start, current, mapPivot(cols, rows, centerCellAxes))
+export function formatRotateDegrees(start, current, pivot) {
+  if (!pivot) return '0°'
+  const deg = snappedRotateDegrees(start, current, pivot)
   return `${deg}°`
 }
 
@@ -89,6 +87,35 @@ function paintedBounds(src, cols, rows) {
   }
   if (maxX < 0) return null
   return { minX, minY, maxX, maxY }
+}
+
+/**
+ * Centro do desenho pintado (união das grades). Sem tinta, devolve null.
+ *
+ * @param {number[][]} grids
+ * @returns {{ x: number, y: number } | null}
+ */
+export function drawingPivotFromGrids(grids) {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -1
+  let maxY = -1
+  for (let i = 0; i < grids.length; i += 1) {
+    const src = grids[i]
+    const rows = src.length
+    const cols = rows ? src[0].length : 0
+    const bounds = paintedBounds(src, cols, rows)
+    if (!bounds) continue
+    if (bounds.minX < minX) minX = bounds.minX
+    if (bounds.minY < minY) minY = bounds.minY
+    if (bounds.maxX > maxX) maxX = bounds.maxX
+    if (bounds.maxY > maxY) maxY = bounds.maxY
+  }
+  if (maxX < 0) return null
+  return {
+    x: (minX + maxX) / 2 + 0.5,
+    y: (minY + maxY) / 2 + 0.5,
+  }
 }
 
 /**

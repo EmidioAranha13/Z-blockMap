@@ -151,6 +151,7 @@ export default function App() {
               clampStroke={clampStroke}
               theme={theme}
               centerCellAxes={editor.centerCellAxes}
+              rotatePivot={editor.rotatePivot}
               panMode={panMode}
               onTogglePanMode={() => setPanMode((on) => !on)}
               onHover={editor.setHover}

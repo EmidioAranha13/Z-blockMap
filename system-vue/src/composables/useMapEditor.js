@@ -33,7 +33,7 @@ import {
   setTreeVisible,
 } from '@/utils/layers.js'
 import { expandBrush, getLineCells, getPerfectShapeCells, getShapeCells } from '@/utils/shapes.js'
-import { mapPivot, rotateGrid, snappedRotateDegrees } from '@/utils/rotate.js'
+import { drawingPivotFromGrids, rotateGrid, snappedRotateDegrees } from '@/utils/rotate.js'
 
 const DEFAULT_WIDTH = 24
 const DEFAULT_HEIGHT = 16
@@ -95,8 +95,8 @@ export function useMapEditor() {
   const moveBaseOffsets = ref([])
   const rotateBases = []
   let rotateStart = null
-  let rotatePivotPt = null
   let rotateLastDeg = 0
+  const rotatePivot = ref(null)
   let sceneRaf = 0
 
   const fixedColors = ref(cloneFixedColors())
@@ -448,13 +448,21 @@ export function useMapEditor() {
         cancelStroke()
         return
       }
-      recordHistory()
       forEachLayer(node, (layer) => bakeLayerOffset(layer))
+      const grids = []
+      forEachLayer(node, (layer) => grids.push(layer.grid))
+      const pivot = drawingPivotFromGrids(grids)
+      if (!pivot) {
+        fileMessage.value = 'Não há desenho para girar.'
+        cancelStroke()
+        return
+      }
+      recordHistory()
       rotateBases.length = 0
       forEachLayer(node, (layer) => {
         rotateBases.push({ id: layer.id, grid: cloneGrid(layer.grid) })
       })
-      rotatePivotPt = mapPivot(mapWidth.value, mapHeight.value, centerCellAxes.value)
+      rotatePivot.value = pivot
       rotateStart = { x: block.x, y: block.y }
       rotateLastDeg = 0
       return
@@ -520,14 +528,15 @@ export function useMapEditor() {
     }
 
     if (activeTool.value === TOOLS.ROTATE) {
-      if (!rotateStart || !rotatePivotPt) return
-      const deg = snappedRotateDegrees(rotateStart, block, rotatePivotPt)
+      if (!rotateStart || !rotatePivot.value) return
+      const deg = snappedRotateDegrees(rotateStart, block, rotatePivot.value)
       if (deg === rotateLastDeg) return
       rotateLastDeg = deg
+      const pivot = rotatePivot.value
       for (const base of rotateBases) {
         const layer = findNode(layerTree.value, base.id)
         if (layer && layer.type === 'layer') {
-          layer.grid = rotateGrid(base.grid, deg, rotatePivotPt.x, rotatePivotPt.y)
+          layer.grid = rotateGrid(base.grid, deg, pivot.x, pivot.y)
         }
       }
       bumpScene()
@@ -618,7 +627,7 @@ export function useMapEditor() {
     moveBaseOffsets.value = []
     rotateBases.length = 0
     rotateStart = null
-    rotatePivotPt = null
+    rotatePivot.value = null
     rotateLastDeg = 0
   }
 
@@ -912,6 +921,7 @@ export function useMapEditor() {
     paintDabs,
     isDrawing,
     sceneTick,
+    rotatePivot,
     gridSize,
     activeToolMeta,
     fixedColors,

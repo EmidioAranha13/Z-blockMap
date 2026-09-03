@@ -35,6 +35,7 @@ const {
   paintDabs,
   isDrawing,
   sceneTick,
+  rotatePivot,
   gridSize,
   activeToolMeta,
   fixedColors,
@@ -248,6 +249,7 @@ onUnmounted(() => {
           :center-cell-axes="centerCellAxes"
           :scene-tick="sceneTick"
           :paint-dabs="paintDabs"
+          :rotate-pivot="rotatePivot"
           @hover="setHover"
           @stroke-start="beginStroke"
           @stroke-move="continueStroke"

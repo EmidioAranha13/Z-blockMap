@@ -143,8 +143,8 @@ export const MOVE_TOOL_META = [
     label: 'Girar desenho',
     shortcut: 'G',
     glyph: '↻',
-    hint: 'Clique e segure o desenho, depois arraste para a esquerda ou direita. O giro é de 1° em 1° em torno da origem.',
-    blurb: 'Gira o desenho da camada em torno da origem, de 1° em 1°.',
+    hint: 'Clique e arraste para girar o desenho da camada (ou do grupo) em torno de si mesmo, de 1° em 1°.',
+    blurb: 'Gira o desenho da camada em torno do próprio centro, de 1° em 1°.',
   },
 ]
 

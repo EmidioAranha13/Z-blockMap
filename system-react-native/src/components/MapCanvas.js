@@ -70,6 +70,7 @@ export default function MapCanvas({
   centerCellAxes,
   panMode,
   sceneTick = 0,
+  rotatePivot = null,
   onTogglePanMode,
   onHover,
   onStrokeStart,
@@ -303,7 +304,7 @@ export default function MapCanvas({
         >
           <Text style={{ color: ui.ink, fontWeight: '700', fontSize: 12 }}>
             {activeTool === TOOLS.ROTATE
-              ? formatRotateDegrees(lineOrigin, hoverBlock, cols, rows, centerCellAxes)
+              ? formatRotateDegrees(lineOrigin, hoverBlock, rotatePivot)
               : formatLineDistance(lineOrigin, hoverBlock)}
           </Text>
         </View>

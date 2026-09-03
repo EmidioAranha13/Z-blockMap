@@ -6,6 +6,7 @@ export {
   blockAngleDeg,
   snappedRotateDegrees,
   formatRotateDegrees,
+  drawingPivotFromGrids,
 } from '../../../shared/rotate.js'
 
 /**

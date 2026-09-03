@@ -33,7 +33,7 @@ import {
   setTreeVisible,
 } from '../utils/layers.js'
 import { expandBrush, getLineCells, getPerfectShapeCells, getShapeCells } from '../utils/shapes.js'
-import { mapPivot, rotateGrid, snappedRotateDegrees } from '../utils/rotate.js'
+import { drawingPivotFromGrids, rotateGrid, snappedRotateDegrees } from '../utils/rotate.js'
 import { buildVisiblePixels } from '../utils/drawMap.js'
 
 const DEFAULT_WIDTH = 24
@@ -95,6 +95,7 @@ export function useMapEditor() {
   const rotateStart = useRef(null)
   const rotatePivotPt = useRef(null)
   const rotateLastDeg = useRef(0)
+  const [rotatePivot, setRotatePivot] = useState(null)
   const layerTreeRef = useRef(layerTree)
   const activeNodeIdRef = useRef(activeNodeId)
   const mapSizeRef = useRef({ width: mapWidth, height: mapHeight, centerCellAxes, mirrorX, mirrorY, brushSize, fillShapes, activeTool, selectedColor })
@@ -242,6 +243,7 @@ export function useMapEditor() {
     rotateStart.current = null
     rotatePivotPt.current = null
     rotateLastDeg.current = 0
+    setRotatePivot(null)
   }, [])
 
   const setBrushSize = useCallback((size) => {
@@ -314,6 +316,7 @@ export function useMapEditor() {
     rotateStart.current = null
     rotatePivotPt.current = null
     rotateLastDeg.current = 0
+    setRotatePivot(null)
   }, [])
 
   const stampBrush = useCallback((layer, wx, wy, color) => {
@@ -356,15 +359,23 @@ export function useMapEditor() {
         cancelStroke()
         return
       }
-      recordHistory()
-      const { width, height, centerCellAxes: axes } = mapSizeRef.current
       forEachLayer(node, (layer) => bakeLayerOffset(layer))
+      const grids = []
+      forEachLayer(node, (layer) => grids.push(layer.grid))
+      const pivot = drawingPivotFromGrids(grids)
+      if (!pivot) {
+        setFileMessage('Não há desenho para girar.')
+        cancelStroke()
+        return
+      }
+      recordHistory()
       const bases = []
       forEachLayer(node, (layer) => {
         bases.push({ id: layer.id, grid: cloneGrid(layer.grid) })
       })
       rotateBases.current = bases
-      rotatePivotPt.current = mapPivot(width, height, axes)
+      rotatePivotPt.current = pivot
+      setRotatePivot(pivot)
       rotateStart.current = { x: block.x, y: block.y }
       rotateLastDeg.current = 0
       return
@@ -804,6 +815,7 @@ export function useMapEditor() {
     previewCells,
     isDrawing,
     sceneTick,
+    rotatePivot,
     gridSize: { width: mapWidth, height: mapHeight },
     activeToolMeta,
     fixedColors,

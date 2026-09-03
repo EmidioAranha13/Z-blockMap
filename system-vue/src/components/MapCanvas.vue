@@ -57,6 +57,8 @@ const props = defineProps({
   sceneTick: { type: Number, default: 0 },
   /** Blocos recém-pintados pelo pincel/borracha (pintura incremental). */
   paintDabs: { type: Array, default: () => [] },
+  /** Centro do desenho durante o giro (HUD e ângulo). */
+  rotatePivot: { type: Object, default: null },
 })
 
 const emit = defineEmits({
@@ -94,13 +96,8 @@ const lineHudText = computed(() => {
     return formatLineDistance(lineOrigin.value, props.hoverBlock)
   }
   if (props.activeTool === TOOLS.ROTATE) {
-    return formatRotateDegrees(
-      lineOrigin.value,
-      props.hoverBlock,
-      cols.value,
-      rows.value,
-      props.centerCellAxes,
-    )
+    if (!props.rotatePivot) return ''
+    return formatRotateDegrees(lineOrigin.value, props.hoverBlock, props.rotatePivot)
   }
   return ''
 })
