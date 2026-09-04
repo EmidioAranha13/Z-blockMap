@@ -27,6 +27,7 @@ const {
   selectedColor,
   selectedColorInfo,
   fillShapes,
+  alphaPaint,
   mirrorX,
   mirrorY,
   brushSize,
@@ -47,6 +48,7 @@ const {
   fileMessage,
   layerTree,
   activeNodeId,
+  selectedNodeIds,
   onScaleField,
   applyScale,
   setTool,
@@ -177,6 +179,7 @@ onUnmounted(() => {
             <LayerPanel
               :tree="layerTree"
               :active-id="activeNodeId"
+              :selected-ids="selectedNodeIds"
               @select="selectNode"
               @toggle-visible="toggleNodeVisible"
               @rename="renameNode($event.id, $event.name)"
@@ -194,6 +197,7 @@ onUnmounted(() => {
           <EditorToolbar
             :active-tool="activeTool"
             v-model:fill-shapes="fillShapes"
+            v-model:alpha-paint="alphaPaint"
             v-model:mirror-x="mirrorX"
             v-model:mirror-y="mirrorY"
             :selected-color="selectedColor"
@@ -243,7 +247,7 @@ onUnmounted(() => {
           :hover-block="hoverBlock"
           :colors="allColors"
           :active-tool="activeTool"
-          :brush-size="activeTool === TOOLS.FILL ? 1 : brushSize"
+          :brush-size="activeTool === TOOLS.FILL || activeTool === TOOLS.EYEDROPPER ? 1 : brushSize"
           :clamp-stroke="clampStroke"
           :theme="theme"
           :center-cell-axes="centerCellAxes"

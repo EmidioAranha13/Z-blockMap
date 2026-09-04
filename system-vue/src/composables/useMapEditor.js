@@ -4,7 +4,7 @@
  * Grade do cartesiano, camadas/grupos, ferramentas, cores, preview e Undo/Redo.
  */
 import { computed, markRaw, reactive, ref, shallowRef, toRaw, watch } from 'vue'
-import { cloneFixedColors, findColor, normalizeHex } from '@/constants/palette.js'
+import { cloneFixedColors, findColor, getCellHex, normalizeHex } from '@/constants/palette.js'
 import { MAX_GRID_SIZE, MAX_HISTORY, RECENT_COLOR_SLOTS } from '@/constants/limits.js'
 import { TOOLS, getToolMeta, isStampTool } from '@/constants/tools.js'
 import { downloadBlob, readTextFile } from '@/utils/download.js'
@@ -27,9 +27,14 @@ import {
   forEachLayer,
   bakeLayerOffset,
   bakeTreeOffsets,
+  countLayersAfterRemoval,
+  findSiblingList,
+  groupSiblingIds,
+  moveContiguousSiblings,
   moveNodeAmongSiblings,
   removeNode,
   resizeLayerTree,
+  selectedRoots,
   setTreeVisible,
 } from '@/utils/layers.js'
 import { expandBrush, getLineCells, getPerfectShapeCells, getShapeCells } from '@/utils/shapes.js'
@@ -74,11 +79,13 @@ export function useMapEditor() {
 
   const layerTree = ref([createLayer(DEFAULT_WIDTH, DEFAULT_HEIGHT, 'Camada 1')])
   const activeNodeId = ref(layerTree.value[0].id)
+  const selectedNodeIds = ref([layerTree.value[0].id])
   /** Incrementado a cada mudança visual da cena (força o composite). */
   const sceneTick = ref(0)
 
   const activeTool = ref(TOOLS.PENCIL)
   const fillShapes = ref(false)
+  const alphaPaint = ref(false)
   const mirrorX = ref(false)
   const mirrorY = ref(false)
   const brushSize = ref(1)
@@ -153,6 +160,7 @@ export function useMapEditor() {
       const first = firstLayer(layerTree.value)
       activeNodeId.value = first ? first.id : ''
     }
+    pruneSelection(activeNodeId.value)
 
     paintDabs.value = []
     cancelStroke()
@@ -216,6 +224,18 @@ export function useMapEditor() {
       if (nested) return nested
     }
     return null
+  }
+
+  function pruneSelection(primaryId) {
+    const valid = selectedNodeIds.value.filter((id) => findNode(layerTree.value, id))
+    const primary = primaryId && findNode(layerTree.value, primaryId) ? primaryId : valid[0] || ''
+    if (primary && !valid.includes(primary)) valid.push(primary)
+    selectedNodeIds.value = valid.length ? valid : primary ? [primary] : []
+    if (primary) activeNodeId.value = primary
+  }
+
+  function selectionRoots() {
+    return selectedRoots(layerTree.value, selectedNodeIds.value)
   }
 
   /**
@@ -311,6 +331,31 @@ export function useMapEditor() {
     selectedColor.value = color.id
   }
 
+  /**
+   * Pega a cor visível no bloco. Se o hex já existe (fixa ou histórico), só
+   * seleciona; senão cria uma cor nova como a roda faria.
+   */
+  function pickColorAt(block) {
+    if (!block) return
+    const map = grid.value
+    if (!inBounds(map, block.x, block.y)) return
+    const id = map[block.y][block.x]
+    if (id === 0) {
+      selectedColor.value = 0
+      return
+    }
+    const hex = getCellHex(allColors.value, id)
+    const known = allColors.value.find((item) => item.id !== 0 && item.hex === hex)
+    if (known) {
+      if (known.source === 'custom') {
+        customColors.value = [known, ...customColors.value.filter((item) => item.id !== known.id)]
+      }
+      selectedColor.value = known.id
+      return
+    }
+    commitWheelColor(hex)
+  }
+
   function renameColor(colorId, name) {
     const color = findColor(allColors.value, colorId)
     if (!color) return
@@ -334,12 +379,16 @@ export function useMapEditor() {
   }
 
   function clearMap() {
-    const node = activeNode.value
-    if (!node) return
+    const roots = selectionRoots()
+      .map((id) => findNode(layerTree.value, id))
+      .filter(Boolean)
+    if (roots.length === 0) return
     recordHistory()
-    forEachLayer(node, (layer) => {
-      clearGrid(layer.grid, 0)
-    })
+    for (const node of roots) {
+      forEachLayer(node, (layer) => {
+        clearGrid(layer.grid, 0)
+      })
+    }
     previewCells.value = emptyPreview
     bumpScene()
   }
@@ -398,6 +447,10 @@ export function useMapEditor() {
       const key = blockKey(lx, ly)
       if (visitedInStroke.has(key)) return
       if (!inBounds(layer.grid, lx, ly)) return
+      if (alphaPaint.value && color !== 0 && layer.grid[ly][lx] === 0) {
+        visitedInStroke.add(key)
+        return
+      }
       visitedInStroke.add(key)
       layer.grid[ly][lx] = color
       dabs.push({ x: wx, y: wy, color })
@@ -409,6 +462,10 @@ export function useMapEditor() {
       const key = blockKey(local.x, local.y)
       if (visitedInStroke.has(key)) continue
       if (!inBounds(layer.grid, local.x, local.y)) continue
+      if (alphaPaint.value && color !== 0 && layer.grid[local.y][local.x] === 0) {
+        visitedInStroke.add(key)
+        continue
+      }
       visitedInStroke.add(key)
       layer.grid[local.y][local.x] = color
       dabs.push({ x: world.x, y: world.y, color })
@@ -427,6 +484,11 @@ export function useMapEditor() {
     isDrawing.value = true
     strokeOrigin.value = { ...block }
     visitedInStroke.clear()
+
+    if (activeTool.value === TOOLS.EYEDROPPER) {
+      pickColorAt(block)
+      return
+    }
 
     if (activeTool.value === TOOLS.MOVE) {
       const node = activeNode.value
@@ -512,6 +574,11 @@ export function useMapEditor() {
   function continueStroke(block) {
     if (!isDrawing.value) return
 
+    if (activeTool.value === TOOLS.EYEDROPPER) {
+      pickColorAt(block)
+      return
+    }
+
     if (activeTool.value === TOOLS.MOVE) {
       if (!moveOrigin.value) return
       const dx = block.x - moveOrigin.value.x
@@ -590,7 +657,7 @@ export function useMapEditor() {
       return
     }
 
-    if (activeTool.value === TOOLS.FILL) {
+    if (activeTool.value === TOOLS.FILL || activeTool.value === TOOLS.EYEDROPPER) {
       cancelStroke()
       return
     }
@@ -668,8 +735,27 @@ export function useMapEditor() {
     fileMessage.value = 'Forma perfeita criada.'
   }
 
-  function selectNode(id) {
+  function selectNode(payload) {
+    const id = typeof payload === 'string' ? payload : payload?.id
+    const additive = Boolean(payload && payload.additive)
+    if (!id || !findNode(layerTree.value, id)) return
+    if (additive) {
+      const set = new Set(selectedNodeIds.value)
+      if (set.has(id) && set.size > 1) {
+        set.delete(id)
+        selectedNodeIds.value = [...set]
+        if (activeNodeId.value === id) {
+          activeNodeId.value = selectedNodeIds.value[selectedNodeIds.value.length - 1]
+        }
+        return
+      }
+      set.add(id)
+      selectedNodeIds.value = [...set]
+      activeNodeId.value = id
+      return
+    }
     activeNodeId.value = id
+    selectedNodeIds.value = [id]
   }
 
   function addLayer() {
@@ -683,6 +769,7 @@ export function useMapEditor() {
       layerTree.value = [...layerTree.value, layer]
     }
     activeNodeId.value = layer.id
+    selectedNodeIds.value = [layer.id]
     bumpScene()
   }
 
@@ -691,45 +778,51 @@ export function useMapEditor() {
     const group = createGroup(`Grupo ${layerTree.value.length + 1}`)
     layerTree.value = [...layerTree.value, group]
     activeNodeId.value = group.id
+    selectedNodeIds.value = [group.id]
     bumpScene()
   }
 
   /**
-   * Envolve o nó selecionado em um grupo novo (se ainda não for a raiz única).
+   * Envolve os nós selecionados em um grupo (precisam ser irmãos).
    */
   function groupSelection() {
-    const id = activeNodeId.value
-    const index = layerTree.value.findIndex((node) => node.id === id)
-    if (index < 0) {
-      fileMessage.value = 'Agrupe a partir da lista raiz, ou crie um grupo e adicione camadas nele.'
+    const ids = selectionRoots()
+    if (ids.length === 0) return
+    const first = findSiblingList(layerTree.value, ids[0])
+    if (!first || !ids.every((id) => first.list.some((node) => node.id === id))) {
+      fileMessage.value = 'Selecione camadas irmãs (mesmo nível) para agrupar.'
       return
     }
     recordHistory()
-    const [node] = layerTree.value.splice(index, 1)
-    const group = createGroup('Grupo', [node])
-    layerTree.value.splice(index, 0, group)
+    const group = groupSiblingIds(layerTree.value, ids)
+    if (!group) {
+      fileMessage.value = 'Selecione camadas irmãs (mesmo nível) para agrupar.'
+      return
+    }
     layerTree.value = layerTree.value.slice()
     activeNodeId.value = group.id
+    selectedNodeIds.value = [group.id]
     bumpScene()
   }
 
   function deleteNode() {
-    if (countLayers(layerTree.value) <= 1 && activeLayer.value) {
+    const ids = selectionRoots()
+    if (ids.length === 0) return
+    if (countLayersAfterRemoval(layerTree.value, ids) < 1) {
       fileMessage.value = 'O mapa precisa de ao menos uma camada.'
       return
     }
-    const id = activeNodeId.value
-    if (!id) return
     recordHistory()
-    removeNode(layerTree.value, id)
+    for (const id of ids) removeNode(layerTree.value, id)
     layerTree.value = layerTree.value.slice()
     const first = firstLayer(layerTree.value)
     if (!first) {
       const layer = createLayer(mapWidth.value, mapHeight.value, 'Camada 1')
       layerTree.value = [layer]
       activeNodeId.value = layer.id
+      selectedNodeIds.value = [layer.id]
     } else {
-      activeNodeId.value = first.id
+      pruneSelection(first.id)
     }
     bumpScene()
   }
@@ -750,25 +843,45 @@ export function useMapEditor() {
   }
 
   function shiftNode(dir) {
+    const ids = selectionRoots()
+    if (ids.length === 0) return
     recordHistory()
-    moveNodeAmongSiblings(layerTree.value, activeNodeId.value, dir)
+    const first = findSiblingList(layerTree.value, ids[0])
+    const asBlock = first && ids.every((id) => first.list.some((node) => node.id === id))
+    if (asBlock && !moveContiguousSiblings(first.list, ids, dir)) {
+      const ordered = ids
+        .map((id) => ({ id, index: first.list.findIndex((node) => node.id === id) }))
+        .sort((a, b) => (dir > 0 ? b.index - a.index : a.index - b.index))
+      for (const item of ordered) {
+        moveNodeAmongSiblings(layerTree.value, item.id, dir)
+      }
+    } else if (!asBlock) {
+      moveNodeAmongSiblings(layerTree.value, activeNodeId.value, dir)
+    }
     layerTree.value = layerTree.value.slice()
     bumpScene()
   }
 
   function duplicateNode() {
-    const node = activeNode.value
-    if (!node) {
+    const roots = selectionRoots()
+      .map((id) => findNode(layerTree.value, id))
+      .filter(Boolean)
+    if (roots.length === 0) {
       fileMessage.value = 'Selecione uma camada ou grupo para duplicar.'
       return
     }
     recordHistory()
-    const copy = cloneNodeDeep(node)
-    if (!insertNodeAfter(layerTree.value, node.id, copy)) {
-      layerTree.value = [...layerTree.value, copy]
+    const copies = []
+    for (const node of roots) {
+      const copy = cloneNodeDeep(node)
+      if (!insertNodeAfter(layerTree.value, node.id, copy)) {
+        layerTree.value = [...layerTree.value, copy]
+      }
+      copies.push(copy.id)
     }
     layerTree.value = layerTree.value.slice()
-    activeNodeId.value = copy.id
+    activeNodeId.value = copies[copies.length - 1]
+    selectedNodeIds.value = copies
     bumpScene()
   }
 
@@ -776,13 +889,15 @@ export function useMapEditor() {
    * @param {'h' | 'v'} axis
    */
   function flipActiveLayer(axis) {
-    const node = activeNode.value
-    if (!node) {
+    const roots = selectionRoots()
+      .map((id) => findNode(layerTree.value, id))
+      .filter(Boolean)
+    if (roots.length === 0) {
       fileMessage.value = 'Selecione uma camada para inverter.'
       return
     }
     recordHistory()
-    flipNodeGrids(node, axis)
+    for (const node of roots) flipNodeGrids(node, axis)
     bumpScene()
   }
 
@@ -841,6 +956,7 @@ export function useMapEditor() {
       bakeTreeOffsets(layerTree.value)
       const first = firstLayer(layerTree.value)
       activeNodeId.value = first ? first.id : ''
+      pruneSelection(activeNodeId.value)
       fixedColors.value = parsed.fixedColors
       customColors.value = parsed.customColors
       selectedColor.value = parsed.selectedColor
@@ -894,6 +1010,7 @@ export function useMapEditor() {
     if (key === 'b') setTool(TOOLS.PENCIL)
     if (key === 'r') setTool(TOOLS.ERASER)
     if (key === 't') setTool(TOOLS.FILL)
+    if (key === 'i') setTool(TOOLS.EYEDROPPER)
     if (key === 'l') setTool(TOOLS.LINE)
     if (key === 'c') setTool(TOOLS.CIRCLE)
     if (key === 'q') setTool(TOOLS.SQUARE)
@@ -913,6 +1030,7 @@ export function useMapEditor() {
     selectedColor,
     selectedColorInfo,
     fillShapes,
+    alphaPaint,
     mirrorX,
     mirrorY,
     brushSize,
@@ -934,6 +1052,7 @@ export function useMapEditor() {
     fileMessage,
     layerTree,
     activeNodeId,
+    selectedNodeIds,
     activeNode,
     onScaleField,
     toggleScaleLock,

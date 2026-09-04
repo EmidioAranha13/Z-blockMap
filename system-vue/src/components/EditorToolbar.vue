@@ -18,6 +18,7 @@ import { clampThickness, maxPerfectThickness } from '@/utils/shapes.js'
 import penIcon from '@/assets/pen.png'
 import borrachaIcon from '@/assets/borracha.png'
 import tintaIcon from '@/assets/tinta.png'
+import pipetaIcon from '@/assets/pipeta.svg'
 import perfectIcon from '@/assets/perfect.png'
 import moveDesenhoIcon from '@/assets/move_desenho.png'
 import { nextTick, onUnmounted, computed, ref, watch } from 'vue'
@@ -26,6 +27,7 @@ const TOOL_ICONS = {
   [TOOLS.PENCIL]: penIcon,
   [TOOLS.ERASER]: borrachaIcon,
   [TOOLS.FILL]: tintaIcon,
+  [TOOLS.EYEDROPPER]: pipetaIcon,
   [PERFECT_TOOL_META.id]: perfectIcon,
   [TOOLS.MOVE]: moveDesenhoIcon,
 }
@@ -33,6 +35,7 @@ const TOOL_ICONS = {
 const props = defineProps({
   activeTool: { type: String, required: true },
   fillShapes: { type: Boolean, required: true },
+  alphaPaint: { type: Boolean, default: false },
   selectedColor: { type: Number, required: true },
   selectedColorInfo: { type: Object, default: null },
   fixedColors: { type: Array, required: true },
@@ -52,6 +55,7 @@ const emit = defineEmits({
   'set-tool': (toolId) => typeof toolId === 'string',
   'set-color': (colorId) => typeof colorId === 'number',
   'update:fillShapes': (value) => typeof value === 'boolean',
+  'update:alphaPaint': (value) => typeof value === 'boolean',
   'update:mirrorX': (value) => typeof value === 'boolean',
   'update:mirrorY': (value) => typeof value === 'boolean',
   'commit-color': (hex) => typeof hex === 'string',
@@ -280,6 +284,15 @@ function onCompactClick(tool) {
         Preencher forma
       </label>
 
+      <label class="fill" title="Pinta só os blocos já preenchidos da camada. Blocos desligados (vazios) não recebem tinta.">
+        <input
+          type="checkbox"
+          :checked="alphaPaint"
+          @change="emit('update:alphaPaint', $event.target.checked)"
+        />
+        Pintura alfa
+      </label>
+
       <div class="mirror">
         <span class="mirror__title">Simetria espelhada</span>
         <label class="fill">
@@ -464,7 +477,7 @@ function onCompactClick(tool) {
 }
 
 .tool-grid--actions {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
 .tool-btn {

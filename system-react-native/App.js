@@ -147,7 +147,7 @@ export default function App() {
               hoverBlock={editor.hoverBlock}
               colors={editor.allColors}
               activeTool={editor.activeTool}
-              brushSize={editor.activeTool === TOOLS.FILL ? 1 : editor.brushSize}
+              brushSize={editor.activeTool === TOOLS.FILL || editor.activeTool === TOOLS.EYEDROPPER ? 1 : editor.brushSize}
               clampStroke={clampStroke}
               theme={theme}
               centerCellAxes={editor.centerCellAxes}

@@ -22,6 +22,8 @@ export const TOOLS = {
   STAR: 'star',
   /** Tinta: preenche a região conectada da mesma cor. */
   FILL: 'fill',
+  /** Conta-gotas: pega a cor de um bloco do desenho. */
+  EYEDROPPER: 'eyedropper',
   /** Move o desenho da camada dentro da grade (o que sair do mapa some). */
   MOVE: 'move',
   /** Gira o desenho da camada em torno da origem, de 1 em 1 grau. */
@@ -76,6 +78,14 @@ export const ACTION_TOOL_META = [
     shortcut: 'T',
     hint: 'Clique numa região fechada (ou num desenho da mesma cor) para pintá-la por completo.',
     blurb: 'Preenche uma região fechada da mesma cor.',
+  },
+  {
+    id: TOOLS.EYEDROPPER,
+    label: 'Conta-gotas',
+    shortcut: 'I',
+    glyph: '\u25CE',
+    hint: 'Clique num bloco pintado para selecionar essa cor. Se ela ainda não estiver no histórico, entra como cor nova.',
+    blurb: 'Pega a cor de um bloco do desenho.',
   },
 ]
 
@@ -148,7 +158,7 @@ export const MOVE_TOOL_META = [
   },
 ]
 
-/** Primeira linha da grade compacta: pincel, borracha, tinta, forma perfeita, mover. */
+/** Primeira linha da grade compacta: pincel, borracha, tinta, conta-gotas, forma perfeita, mover, girar. */
 export const COMPACT_ACTION_META = [...ACTION_TOOL_META, PERFECT_TOOL_META, ...MOVE_TOOL_META]
 
 export const TOOL_META = [...ACTION_TOOL_META, ...SHAPE_TOOL_META, ...MOVE_TOOL_META]

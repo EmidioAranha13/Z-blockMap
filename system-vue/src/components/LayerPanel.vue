@@ -10,10 +10,12 @@ import LayerRow from '@/components/LayerRow.vue'
 defineProps({
   tree: { type: Array, required: true },
   activeId: { type: String, default: '' },
+  selectedIds: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits({
-  select: (id) => typeof id === 'string',
+  select: (payload) =>
+    typeof payload === 'string' || (payload && typeof payload.id === 'string'),
   'toggle-visible': (id) => typeof id === 'string',
   rename: null,
   'toggle-collapsed': (id) => typeof id === 'string',
@@ -36,6 +38,7 @@ const emit = defineEmits({
         :key="node.id"
         :node="node"
         :active-id="activeId"
+        :selected-ids="selectedIds"
         :depth="0"
         @select="emit('select', $event)"
         @toggle-visible="emit('toggle-visible', $event)"
@@ -43,18 +46,19 @@ const emit = defineEmits({
         @toggle-collapsed="emit('toggle-collapsed', $event)"
       />
     </ul>
+    <p class="hint">Ctrl + clique para selecionar várias camadas.</p>
 
     <div class="row-btns">
       <button type="button" class="ghost" title="Nova camada" @click="emit('addLayer')">+ Camada</button>
       <button type="button" class="ghost" title="Novo grupo" @click="emit('addGroup')">+ Grupo</button>
     </div>
     <div class="row-btns">
-      <button type="button" class="ghost" title="Duplicar a camada ou grupo selecionado" @click="emit('duplicate')">Duplicar</button>
-      <button type="button" class="ghost" title="Inverter a camada na horizontal" @click="emit('flip-h')">Inverter H</button>
-      <button type="button" class="ghost" title="Inverter a camada na vertical" @click="emit('flip-v')">Inverter V</button>
+      <button type="button" class="ghost" title="Duplicar as camadas ou grupos selecionados" @click="emit('duplicate')">Duplicar</button>
+      <button type="button" class="ghost" title="Inverter as camadas selecionadas na horizontal" @click="emit('flip-h')">Inverter H</button>
+      <button type="button" class="ghost" title="Inverter as camadas selecionadas na vertical" @click="emit('flip-v')">Inverter V</button>
     </div>
     <div class="row-btns">
-      <button type="button" class="ghost" @click="emit('group')">Agrupar</button>
+      <button type="button" class="ghost" title="Agrupar as camadas selecionadas (precisam ser irmãs, no mesmo nível)" @click="emit('group')">Agrupar</button>
       <button type="button" class="ghost" title="Trazer para frente" @click="emit('shift', 1)">↑</button>
       <button type="button" class="ghost" title="Enviar para trás" @click="emit('shift', -1)">↓</button>
       <button type="button" class="danger" @click="emit('remove')">Excluir</button>
@@ -77,6 +81,12 @@ const emit = defineEmits({
   background: var(--bg-input);
   max-height: 220px;
   overflow: auto;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--ink-dim);
 }
 
 .row-btns {

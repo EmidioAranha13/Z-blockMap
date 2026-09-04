@@ -13,11 +13,28 @@ export default {
   props: {
     node: { type: Object, required: true },
     activeId: { type: String, default: '' },
+    selectedIds: { type: Array, default: () => [] },
     depth: { type: Number, default: 0 },
   },
   emits: ['select', 'toggle-visible', 'rename', 'toggle-collapsed'],
   data() {
     return { closeEye, openEye }
+  },
+  computed: {
+    isSelected() {
+      return this.selectedIds.includes(this.node.id)
+    },
+    isActive() {
+      return this.activeId === this.node.id
+    },
+  },
+  methods: {
+    onSelect(event) {
+      this.$emit('select', {
+        id: this.node.id,
+        additive: event.ctrlKey || event.metaKey,
+      })
+    },
   },
 }
 </script>
@@ -26,9 +43,13 @@ export default {
   <li>
     <div
       class="item"
-      :class="{ 'item--on': activeId === node.id, 'item--group': node.type === 'group' }"
+      :class="{
+        'item--on': isSelected,
+        'item--draw': isActive,
+        'item--group': node.type === 'group',
+      }"
       :style="{ paddingLeft: 6 + depth * 12 + 'px' }"
-      @click="$emit('select', node.id)"
+      @click="onSelect($event)"
     >
       <button
         v-if="node.type === 'group'"
@@ -58,7 +79,6 @@ export default {
         @click.stop
         @change="$emit('rename', { id: node.id, name: $event.target.value })"
       />
-      />
     </div>
     <ul v-if="node.type === 'group' && !node.collapsed && node.children.length" class="nest">
       <LayerRow
@@ -66,6 +86,7 @@ export default {
         :key="child.id"
         :node="child"
         :active-id="activeId"
+        :selected-ids="selectedIds"
         :depth="depth + 1"
         @select="$emit('select', $event)"
         @toggle-visible="$emit('toggle-visible', $event)"
@@ -83,11 +104,16 @@ export default {
   gap: 4px;
   padding: 5px 6px;
   cursor: pointer;
+  user-select: none;
   border-bottom: 1px solid var(--line);
 }
 
 .item--on {
   background: var(--tool-on);
+}
+
+.item--draw {
+  box-shadow: inset 3px 0 0 var(--brass);
 }
 
 .item--group .name {

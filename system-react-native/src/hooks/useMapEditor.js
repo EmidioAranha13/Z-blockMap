@@ -6,7 +6,7 @@ import * as DocumentPicker from 'expo-document-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import * as Sharing from 'expo-sharing'
 import { AlphaType, ColorType, Skia } from '@shopify/react-native-skia'
-import { cloneFixedColors, findColor, normalizeHex } from '../constants/palette.js'
+import { cloneFixedColors, findColor, getCellHex, normalizeHex } from '../constants/palette.js'
 import { MAX_GRID_SIZE, MAX_HISTORY, RECENT_COLOR_SLOTS } from '../constants/limits.js'
 import { TOOLS, getToolMeta, isStampTool } from '../constants/tools.js'
 import { FILE_EXTENSION, parseMapFile, serializeMapFile } from '../utils/fileFormat.js'
@@ -68,6 +68,7 @@ export function useMapEditor() {
 
   const [activeTool, setActiveTool] = useState(TOOLS.PENCIL)
   const [fillShapes, setFillShapes] = useState(false)
+  const [alphaPaint, setAlphaPaint] = useState(false)
   const [mirrorX, setMirrorX] = useState(false)
   const [mirrorY, setMirrorY] = useState(false)
   const [brushSize, setBrushSizeState] = useState(1)
@@ -98,7 +99,7 @@ export function useMapEditor() {
   const [rotatePivot, setRotatePivot] = useState(null)
   const layerTreeRef = useRef(layerTree)
   const activeNodeIdRef = useRef(activeNodeId)
-  const mapSizeRef = useRef({ width: mapWidth, height: mapHeight, centerCellAxes, mirrorX, mirrorY, brushSize, fillShapes, activeTool, selectedColor })
+  const mapSizeRef = useRef({ width: mapWidth, height: mapHeight, centerCellAxes, mirrorX, mirrorY, brushSize, fillShapes, alphaPaint, activeTool, selectedColor })
 
   layerTreeRef.current = layerTree
   activeNodeIdRef.current = activeNodeId
@@ -111,6 +112,7 @@ export function useMapEditor() {
     mirrorY,
     brushSize,
     fillShapes,
+    alphaPaint,
     activeTool,
     selectedColor,
   }
@@ -197,6 +199,10 @@ export function useMapEditor() {
   const selectedColorInfo = useMemo(() => findColor(allColors, selectedColor), [allColors, selectedColor])
   const recentCustom = useMemo(() => customColors.slice(0, RECENT_COLOR_SLOTS), [customColors])
   const extraCustom = useMemo(() => customColors.slice(RECENT_COLOR_SLOTS), [customColors])
+  const gridRef = useRef(grid)
+  const colorsRef = useRef(allColors)
+  gridRef.current = grid
+  colorsRef.current = allColors
 
   const onScaleField = useCallback((axis, value) => {
     setScaleInput((prev) => {
@@ -327,10 +333,36 @@ export function useMapEditor() {
       const key = blockKey(local.x, local.y)
       if (visitedInStroke.current.has(key)) continue
       if (!inBounds(layer.grid, local.x, local.y)) continue
+      if (mapSizeRef.current.alphaPaint && color !== 0 && layer.grid[local.y][local.x] === 0) {
+        visitedInStroke.current.add(key)
+        continue
+      }
       visitedInStroke.current.add(key)
       setCell(layer.grid, local.x, local.y, color)
     }
   }, [])
+
+  const pickColorAt = useCallback((block) => {
+    if (!block) return
+    const map = gridRef.current
+    if (!map || !inBounds(map, block.x, block.y)) return
+    const id = map[block.y][block.x]
+    if (id === 0) {
+      setSelectedColor(0)
+      return
+    }
+    const colors = colorsRef.current
+    const hex = getCellHex(colors, id)
+    const known = colors.find((item) => item.id !== 0 && item.hex === hex)
+    if (known) {
+      if (known.source === 'custom') {
+        setCustomColors((list) => [known, ...list.filter((item) => item.id !== known.id)])
+      }
+      setSelectedColor(known.id)
+      return
+    }
+    commitWheelColor(hex)
+  }, [commitWheelColor])
 
   const beginStroke = useCallback((block) => {
     setIsDrawing(true)
@@ -340,6 +372,11 @@ export function useMapEditor() {
     const node = findNode(tree, activeNodeIdRef.current)
     const { activeTool: tool, selectedColor: color, width, height, fillShapes: fill, mirrorX: mx, mirrorY: my, centerCellAxes: axes, brushSize: size } =
       mapSizeRef.current
+
+    if (tool === TOOLS.EYEDROPPER) {
+      pickColorAt(block)
+      return
+    }
 
     if (tool === TOOLS.MOVE) {
       if (!node) return
@@ -416,13 +453,18 @@ export function useMapEditor() {
     }
 
     setPreviewCells(withMirrors(getShapeCells(tool, block, block, fill, width, height, size), width, height, mx, my, axes))
-  }, [recordHistory, stampBrush, bumpScene, bumpPixels, cancelStroke])
+  }, [recordHistory, stampBrush, bumpScene, bumpPixels, cancelStroke, pickColorAt])
 
   const continueStroke = useCallback((block) => {
     const { activeTool: tool, selectedColor: color, width, height, fillShapes: fill, mirrorX: mx, mirrorY: my, centerCellAxes: axes, brushSize: size } =
       mapSizeRef.current
     const tree = layerTreeRef.current
     const node = findNode(tree, activeNodeIdRef.current)
+
+    if (tool === TOOLS.EYEDROPPER) {
+      pickColorAt(block)
+      return
+    }
 
     if (tool === TOOLS.MOVE) {
       if (!moveOrigin.current) return
@@ -482,7 +524,7 @@ export function useMapEditor() {
     setPreviewCells(
       withMirrors(getShapeCells(tool, strokeOrigin.current, block, fill, width, height, size), width, height, mx, my, axes),
     )
-  }, [stampBrush, bumpScene, bumpPixels])
+  }, [stampBrush, bumpScene, bumpPixels, pickColorAt])
 
   const endStroke = useCallback(() => {
     const { activeTool: tool, selectedColor: color } = mapSizeRef.current
@@ -505,7 +547,7 @@ export function useMapEditor() {
       return
     }
 
-    if (tool === TOOLS.FILL) {
+    if (tool === TOOLS.FILL || tool === TOOLS.EYEDROPPER) {
       cancelStroke()
       return
     }
@@ -806,6 +848,8 @@ export function useMapEditor() {
     selectedColorInfo,
     fillShapes,
     setFillShapes,
+    alphaPaint,
+    setAlphaPaint,
     mirrorX,
     setMirrorX,
     mirrorY,

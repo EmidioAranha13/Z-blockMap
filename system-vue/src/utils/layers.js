@@ -399,6 +399,128 @@ export function countLayers(nodes) {
 }
 
 /**
+ * Lista de irmãos que contém o nó, e o índice dele nela.
+ * @param {Array<LayerNode | GroupNode>} nodes
+ * @param {string} id
+ * @returns {{ list: Array<LayerNode | GroupNode>, index: number } | null}
+ */
+export function findSiblingList(nodes, id) {
+  const index = nodes.findIndex((node) => node.id === id)
+  if (index >= 0) return { list: nodes, index }
+  for (const node of nodes) {
+    if (node.type === 'group') {
+      const found = findSiblingList(node.children, id)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+/**
+ * Ids de ancestrais do nó (do pai até a raiz), ou null se não achar.
+ * @param {Array<LayerNode | GroupNode>} nodes
+ * @param {string} id
+ * @param {string[]} [trail]
+ */
+export function ancestorIds(nodes, id, trail = []) {
+  for (const node of nodes) {
+    if (node.id === id) return trail
+    if (node.type === 'group') {
+      const found = ancestorIds(node.children, id, [...trail, node.id])
+      if (found) return found
+    }
+  }
+  return null
+}
+
+/**
+ * Remove da seleção os nós que já entram porque o ancestral também está selecionado.
+ * @param {Array<LayerNode | GroupNode>} nodes
+ * @param {string[]} ids
+ */
+export function selectedRoots(nodes, ids) {
+  const set = new Set(ids)
+  return ids.filter((id) => {
+    const anc = ancestorIds(nodes, id) || []
+    return !anc.some((item) => set.has(item))
+  })
+}
+
+/**
+ * Quantas camadas-folha restam se esses nós (e o que há dentro) saírem.
+ * @param {Array<LayerNode | GroupNode>} nodes
+ * @param {string[]} ids
+ */
+export function countLayersAfterRemoval(nodes, ids) {
+  const roots = new Set(selectedRoots(nodes, ids))
+  let total = 0
+  function visit(list, parentRemoved) {
+    for (const node of list) {
+      const gone = parentRemoved || roots.has(node.id)
+      if (node.type === 'layer') {
+        if (!gone) total += 1
+      } else {
+        visit(node.children || [], gone)
+      }
+    }
+  }
+  visit(nodes, false)
+  return total
+}
+
+/**
+ * Envolve os ids num grupo novo. Só vale se todos forem irmãos.
+ * @param {Array<LayerNode | GroupNode>} nodes
+ * @param {string[]} ids
+ * @returns {GroupNode | null}
+ */
+export function groupSiblingIds(nodes, ids) {
+  const unique = [...new Set(ids)]
+  if (unique.length === 0) return null
+  const first = findSiblingList(nodes, unique[0])
+  if (!first) return null
+  const { list } = first
+  const indexes = []
+  for (const id of unique) {
+    const index = list.findIndex((node) => node.id === id)
+    if (index < 0) return null
+    indexes.push(index)
+  }
+  indexes.sort((a, b) => a - b)
+  const taken = indexes.map((index) => list[index])
+  for (let i = indexes.length - 1; i >= 0; i -= 1) list.splice(indexes[i], 1)
+  const group = createGroup('Grupo', taken)
+  list.splice(indexes[0], 0, group)
+  return group
+}
+
+/**
+ * Desloca um bloco contíguo de irmãos. Devolve false se não forem contig.
+ * @param {Array<LayerNode | GroupNode>} list
+ * @param {string[]} ids
+ * @param {number} dir
+ */
+export function moveContiguousSiblings(list, ids, dir) {
+  const indexes = ids.map((id) => list.findIndex((node) => node.id === id)).sort((a, b) => a - b)
+  if (indexes.length === 0 || indexes.some((index) => index < 0)) return false
+  for (let i = 1; i < indexes.length; i += 1) {
+    if (indexes[i] !== indexes[i - 1] + 1) return false
+  }
+  if (dir > 0) {
+    const last = indexes[indexes.length - 1]
+    if (last >= list.length - 1) return false
+    const [after] = list.splice(last + 1, 1)
+    list.splice(indexes[0], 0, after)
+    return true
+  }
+  const firstIdx = indexes[0]
+  if (firstIdx <= 0) return false
+  const [before] = list.splice(firstIdx - 1, 1)
+  list.splice(indexes[indexes.length - 1], 0, before)
+  return true
+}
+
+/**
  * Restaura o gerador de ids após carregar um arquivo.
  * @param {Array<LayerNode | GroupNode>} nodes
  */

@@ -205,6 +205,10 @@ export default function EditorSheet({ visible, onClose, theme, editor }) {
                   <Switch value={editor.fillShapes} onValueChange={editor.setFillShapes} />
                   <Text style={{ color: ui.ink }}>Preencher forma</Text>
                 </View>
+                <View style={styles.row}>
+                  <Switch value={editor.alphaPaint} onValueChange={editor.setAlphaPaint} />
+                  <Text style={{ color: ui.ink }}>Pintura alfa</Text>
+                </View>
                 <Text style={{ color: ui.ink, fontWeight: '700', marginTop: 4 }}>Simetria espelhada</Text>
                 <View style={styles.col}>
                   <View style={styles.row}>

@@ -18,6 +18,7 @@
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import tintaIcon from '@/assets/tinta.png'
+import pipetaIcon from '@/assets/pipeta.svg'
 import moveTudoIcon from '@/assets/move_gtudo.png'
 import expandIcon from '@/assets/expande.png'
 import minimoIcon from '@/assets/minimo.png'
@@ -82,8 +83,9 @@ const panMode = ref(false)
 /** True quando o canvas está em tela cheia. */
 const isFullscreen = ref(false)
 const canvasCursor = ref('crosshair')
-/** Cursor da tinta, um por tema (invertido no dark). */
+/** Cursores de ícone, um por tema (invertido no dark). */
 const fillCursorByTheme = { dark: '', light: '' }
+const eyedropperCursorByTheme = { dark: '', light: '' }
 const lineOrigin = ref(null)
 const hudPos = ref({ x: 0, y: 0 })
 
@@ -628,11 +630,20 @@ watch(
       canvasCursor.value = 'grab'
       return
     }
+    const key = props.theme === 'light' ? 'light' : 'dark'
+    if (props.activeTool === TOOLS.EYEDROPPER) {
+      if (!eyedropperCursorByTheme[key]) {
+        eyedropperCursorByTheme[key] = await makeIconCursor(pipetaIcon, { invert: key === 'dark' })
+      }
+      if (props.activeTool === TOOLS.EYEDROPPER && !isPanning.value && !panMode.value) {
+        canvasCursor.value = eyedropperCursorByTheme[key]
+      }
+      return
+    }
     if (props.activeTool !== TOOLS.FILL) {
       canvasCursor.value = 'crosshair'
       return
     }
-    const key = props.theme === 'light' ? 'light' : 'dark'
     if (!fillCursorByTheme[key]) {
       fillCursorByTheme[key] = await makeIconCursor(tintaIcon, { invert: key === 'dark' })
     }
