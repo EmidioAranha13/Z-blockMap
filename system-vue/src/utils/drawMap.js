@@ -199,6 +199,48 @@ export function rasterizeGridToCanvas(ctx, grid, colors, theme) {
   ctx.putImageData(image, 0, 0)
 }
 
+/**
+ * PNG: cada bloco vira um quadrado inteiro de cellSize×cellSize na origem
+ * do cartesiano (putImageData, sem translate/escala interpolada).
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number[][]} grid
+ * @param {Array<{ id: number, hex: string }>} colors
+ * @param {'dark' | 'light'} theme
+ * @param {number} originX
+ * @param {number} originY
+ * @param {number} cellSize
+ */
+function paintExactBlocks(ctx, grid, colors, theme, originX, originY, cellSize) {
+  const rows = grid.length
+  const cols = rows > 0 ? grid[0].length : 0
+  if (!cols || !rows || cellSize < 1) return
+  const mapW = cols * cellSize
+  const mapH = rows * cellSize
+  const rgbOf = makeRgbLookup(colors, theme)
+  const image = ctx.createImageData(mapW, mapH)
+  const data = image.data
+  for (let y = 0; y < rows; y += 1) {
+    const row = grid[y]
+    const y0 = y * cellSize
+    for (let x = 0; x < cols; x += 1) {
+      const rgb = rgbOf(row[x])
+      const x0 = x * cellSize
+      for (let py = 0; py < cellSize; py += 1) {
+        let i = ((y0 + py) * mapW + x0) * 4
+        for (let px = 0; px < cellSize; px += 1) {
+          data[i] = rgb.r
+          data[i + 1] = rgb.g
+          data[i + 2] = rgb.b
+          data[i + 3] = 255
+          i += 4
+        }
+      }
+    }
+  }
+  ctx.putImageData(image, originX, originY)
+}
+
 let pooledImage = null
 
 function acquireImageData(ctx, width, height) {
@@ -541,8 +583,12 @@ function drawCartesianAxes(ctx, originX, originY, cellSize, cols, rows, skin, ce
 }
 
 /**
- * Renderiza o mapa inteiro num canvas offscreen para PNG:
- * margem em todos os lados, grade, eixos e, abaixo, as tags das cores em uso.
+ * Renderiza o mapa inteiro num canvas offscreen para PNG.
+ *
+ * Cada bloco vira um quadrado inteiro de N×N pixels (escala inteira, sem
+ * interpolação). Os eixos e a malha usam a mesma origem — o desenho não
+ * sai do cartesiano. A margem existe só em volta do campo, não desloca
+ * o conteúdo.
  *
  * @param {object} options
  * @param {number[][]} options.grid
@@ -553,13 +599,14 @@ function drawCartesianAxes(ctx, originX, originY, cellSize, cols, rows, skin, ce
  */
 export function renderMapToCanvas(options) {
   const theme = options.theme === 'light' ? 'light' : 'dark'
-  const rows = options.grid.length
-  const cols = rows > 0 ? options.grid[0].length : 1
-  const maxPx = 4096
-  const cellSize = Math.max(6, Math.min(16, Math.floor(maxPx / Math.max(cols, rows))))
+  const grid = options.grid
+  const rows = grid.length
+  const cols = rows > 0 ? grid[0].length : 1
+  const maxMap = 4096 - LEGEND_PAD * 2
+  const cellSize = Math.max(1, Math.min(16, Math.floor(maxMap / Math.max(cols, rows, 1))))
   const mapW = cols * cellSize
   const mapH = rows * cellSize
-  const used = collectUsedColors(options.grid, options.colors)
+  const used = collectUsedColors(grid, options.colors)
 
   const measure = document.createElement('canvas').getContext('2d')
   const legendH = measureLegendHeight(measure, used, mapW)
@@ -571,27 +618,20 @@ export function renderMapToCanvas(options) {
   const ctx = canvas.getContext('2d')
   const skin = THEME_CANVAS[theme] ?? THEME_CANVAS.dark
 
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.imageSmoothingEnabled = false
   ctx.fillStyle = skin.background
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-  ctx.save()
-  ctx.translate(LEGEND_PAD, LEGEND_PAD)
-  drawMap(ctx, {
-    grid: options.grid,
-    colors: options.colors,
-    originX: 0,
-    originY: 0,
-    cellSize,
-    viewWidth: mapW,
-    viewHeight: mapH,
-    showPreview: false,
-    showHover: false,
-    showGrid: true,
-    showAxes: true,
-    theme,
-    centerCellAxes: !!options.centerCellAxes,
-  })
-  ctx.restore()
+  const originX = LEGEND_PAD
+  const originY = LEGEND_PAD
+
+  paintExactBlocks(ctx, grid, options.colors, theme, originX, originY, cellSize)
+
+  if (cellSize >= 2) {
+    drawGridLines(ctx, originX, originY, cellSize, cols, rows, 0, 0, cols, rows, skin.grid, 1)
+  }
+  drawCartesianAxes(ctx, originX, originY, cellSize, cols, rows, skin, !!options.centerCellAxes)
 
   if (legendH > 0) {
     drawLegend(ctx, {
@@ -603,5 +643,55 @@ export function renderMapToCanvas(options) {
     })
   }
 
+  return canvas
+}
+
+/**
+ * Miniatura para os cards: mapa reduzido (lado maior 256 px), sem eixos
+ * e sem malha. Quando o mapa é maior, cada pixel da prévia resume um
+ * bloco de células (LOD de pixel art). Gravada em PREVIA ao salvar.
+ *
+ * @param {object} options
+ * @param {number[][]} options.grid
+ * @param {Array<{ id: number, hex: string }>} options.colors
+ * @param {'dark' | 'light'} [options.theme]
+ * @returns {HTMLCanvasElement}
+ */
+export function renderMapThumbnail(options) {
+  const theme = options.theme === 'light' ? 'light' : 'dark'
+  const rows = options.grid.length
+  const cols = rows > 0 ? options.grid[0].length : 1
+  const max = 256
+  const long = Math.max(cols, rows, 1)
+  const scale = long <= max ? 1 : max / long
+  const tw = Math.max(1, Math.round(cols * scale))
+  const th = Math.max(1, Math.round(rows * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = tw
+  canvas.height = th
+  const ctx = canvas.getContext('2d')
+  const rgbOf = makeRgbLookup(options.colors, theme)
+  const image = ctx.createImageData(tw, th)
+  const data = image.data
+  const counts = new Map()
+  let i = 0
+  for (let py = 0; py < th; py += 1) {
+    const y0 = Math.floor((py * rows) / th)
+    const y1 = Math.max(y0 + 1, Math.floor(((py + 1) * rows) / th))
+    for (let px = 0; px < tw; px += 1) {
+      const x0 = Math.floor((px * cols) / tw)
+      const x1 = Math.max(x0 + 1, Math.floor(((px + 1) * cols) / tw))
+      const rgb =
+        tw === cols && th === rows
+          ? rgbOf(options.grid[py][px])
+          : downsampleBoxRgb(options.grid, x0, y0, x1, y1, rgbOf, counts)
+      data[i] = rgb.r
+      data[i + 1] = rgb.g
+      data[i + 2] = rgb.b
+      data[i + 3] = 255
+      i += 4
+    }
+  }
+  ctx.putImageData(image, 0, 0)
   return canvas
 }

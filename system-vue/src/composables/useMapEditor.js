@@ -5,12 +5,14 @@
  */
 import { computed, markRaw, reactive, ref, shallowRef, toRaw, watch } from 'vue'
 import { cloneFixedColors, findColor, getCellHex, normalizeHex } from '@/constants/palette.js'
-import { MAX_GRID_SIZE, MAX_HISTORY, RECENT_COLOR_SLOTS } from '@/constants/limits.js'
+import { MAX_GRID_SIZE, MAX_HISTORY, RECENT_COLOR_SLOTS, AUTOSAVE_IDLE_MS } from '@/constants/limits.js'
 import { TOOLS, getToolMeta, isStampTool } from '@/constants/tools.js'
 import { downloadBlob, readTextFile } from '@/utils/download.js'
-import { renderMapToCanvas } from '@/utils/drawMap.js'
-import { FILE_EXTENSION, parseMapFile, serializeMapFile } from '@/utils/fileFormat.js'
-import { safeFileName } from '@/utils/fileName.js'
+import { renderMapToCanvas, renderMapThumbnail } from '@/utils/drawMap.js'
+import { parseMapFile, serializeMapFile } from '@/utils/fileFormat.js'
+import { canvasToPngBase64, deleteLibraryMap, fetchLibraryMap, mapsFolderLabel, saveLibraryMap, saveLibraryPng } from '@/utils/libraryApi.js'
+import { LIBRARY_KINDS } from '@/constants/brand.js'
+import { draftFileName, isDraftFileName, officialFileName, safeFileName } from '@/utils/fileName.js'
 import { blockKey, withMirrors } from '@/utils/coords.js'
 import { applyCells, clearGrid, cloneGrid, getGridSize, inBounds, floodFillCells } from '@/utils/grid.js'
 import { createHistory } from '@/utils/history.js'
@@ -65,8 +67,9 @@ function freezeTree(nodes) {
 
 /**
  * Cria o estado e as ações do editor.
+ * @param {'pixel' | '3d'} [kind]
  */
-export function useMapEditor() {
+export function useMapEditor(kind = LIBRARY_KINDS.PIXEL) {
   const mapName = ref('Mapa sem nome')
   const mapWidth = ref(DEFAULT_WIDTH)
   const mapHeight = ref(DEFAULT_HEIGHT)
@@ -112,8 +115,13 @@ export function useMapEditor() {
   let nextCustomId = CUSTOM_ID_START
 
   const fileMessage = ref('')
+  const libraryFileName = ref('')
   const canUndo = ref(false)
   const canRedo = ref(false)
+  const isDirty = ref(false)
+  let hydrating = false
+  let idleTimer = 0
+  let autosaving = false
 
   function captureHistory() {
     return {
@@ -177,14 +185,64 @@ export function useMapEditor() {
   function recordHistory() {
     history.record()
     syncHistoryFlags()
+    touch()
   }
 
   function bumpScene() {
+    if (!hydrating) touch()
     if (sceneRaf) return
     sceneRaf = requestAnimationFrame(() => {
       sceneRaf = 0
       sceneTick.value += 1
     })
+  }
+
+  function touch() {
+    if (hydrating) return
+    isDirty.value = true
+    scheduleIdleAutosave()
+  }
+
+  function scheduleIdleAutosave() {
+    if (typeof window === 'undefined') return
+    window.clearTimeout(idleTimer)
+    idleTimer = window.setTimeout(() => {
+      if (isDrawing.value) {
+        scheduleIdleAutosave()
+        return
+      }
+      saveDraft()
+    }, AUTOSAVE_IDLE_MS)
+  }
+
+  function clearIdleTimer() {
+    if (typeof window === 'undefined') return
+    window.clearTimeout(idleTimer)
+    idleTimer = 0
+  }
+
+  function buildMapPayload() {
+    return serializeMapFile({
+      mapName: mapName.value,
+      width: mapWidth.value,
+      height: mapHeight.value,
+      layerTree: layerTree.value,
+      fixedColors: fixedColors.value,
+      customColors: customColors.value,
+      selectedColor: selectedColor.value,
+      scaleLocked: scaleLocked.value,
+      centerCellAxes: centerCellAxes.value,
+      brushSize: brushSize.value,
+    })
+  }
+
+  function previewBase64() {
+    const preview = renderMapThumbnail({
+      grid: grid.value,
+      colors: allColors.value,
+      theme: 'dark',
+    })
+    return canvasToPngBase64(preview)
   }
 
   const gridSize = computed(() => ({
@@ -912,64 +970,113 @@ export function useMapEditor() {
     if (!history.undo()) return
     previewCells.value = emptyPreview
     syncHistoryFlags()
+    touch()
   }
 
   function redo() {
     if (!history.redo()) return
     previewCells.value = emptyPreview
     syncHistoryFlags()
+    touch()
   }
 
-  function saveMapFile() {
-    const payload = serializeMapFile({
-      mapName: mapName.value,
-      width: mapWidth.value,
-      height: mapHeight.value,
-      layerTree: layerTree.value,
-      fixedColors: fixedColors.value,
-      customColors: customColors.value,
-      selectedColor: selectedColor.value,
-      scaleLocked: scaleLocked.value,
-      centerCellAxes: centerCellAxes.value,
-      brushSize: brushSize.value,
-    })
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: 'application/json',
-    })
-    downloadBlob(blob, `${safeFileName(mapName.value)}${FILE_EXTENSION}`)
-    fileMessage.value = 'Mapa salvo.'
+  function applyParsed(parsed, message) {
+    hydrating = true
+    mapName.value = parsed.mapName
+    mapWidth.value = parsed.width
+    mapHeight.value = parsed.height
+    scaleInput.x = parsed.width
+    scaleInput.y = parsed.height
+    scaleLocked.value = parsed.scaleLocked
+    centerCellAxes.value = parsed.centerCellAxes
+    brushSize.value = parsed.brushSize
+    layerTree.value = parsed.layerTree
+    bakeTreeOffsets(layerTree.value)
+    const first = firstLayer(layerTree.value)
+    activeNodeId.value = first ? first.id : ''
+    pruneSelection(activeNodeId.value)
+    fixedColors.value = parsed.fixedColors
+    customColors.value = parsed.customColors
+    selectedColor.value = parsed.selectedColor
+    const maxCustom = parsed.customColors.reduce(
+      (max, item) => Math.max(max, item.id),
+      CUSTOM_ID_START - 1,
+    )
+    nextCustomId = maxCustom + 1
+    history.reset()
+    syncHistoryFlags()
+    previewCells.value = emptyPreview
+    bumpScene()
+    hydrating = false
+    isDirty.value = false
+    clearIdleTimer()
+    fileMessage.value = message || 'Mapa carregado.'
+  }
+
+  async function saveMapFile() {
+    const payload = buildMapPayload()
+    const id = officialFileName(libraryFileName.value, mapName.value)
+    try {
+      await saveLibraryMap(kind, id, payload, previewBase64())
+      const draftId = draftFileName(id, mapName.value)
+      if (draftId !== id) {
+        try {
+          await deleteLibraryMap(kind, draftId)
+        } catch {
+          /* pode não haver rascunho */
+        }
+      }
+      libraryFileName.value = id
+      isDirty.value = false
+      clearIdleTimer()
+      fileMessage.value = `Mapa salvo em ${mapsFolderLabel(kind)}.`
+      return id
+    } catch {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json',
+      })
+      downloadBlob(blob, id)
+      fileMessage.value = 'Biblioteca indisponível; o arquivo foi baixado.'
+      return null
+    }
+  }
+
+  async function saveDraft() {
+    if (!isDirty.value || hydrating || autosaving) return
+    autosaving = true
+    try {
+      const id = draftFileName(libraryFileName.value, mapName.value)
+      await saveLibraryMap(kind, id, buildMapPayload(), previewBase64())
+      if (!libraryFileName.value || isDraftFileName(libraryFileName.value)) {
+        libraryFileName.value = id
+      }
+      fileMessage.value = 'Rascunho de segurança gravado.'
+    } catch {
+      /* a próxima inércia tenta de novo */
+    } finally {
+      autosaving = false
+    }
+  }
+
+  function disposeEditor() {
+    clearIdleTimer()
+  }
+
+  async function loadMapFromLibrary(id) {
+    fileMessage.value = 'Carregando mapa da biblioteca…'
+    try {
+      const raw = await fetchLibraryMap(kind, id)
+      applyParsed(parseMapFile(raw), 'Mapa carregado da biblioteca.')
+      libraryFileName.value = id
+    } catch (error) {
+      fileMessage.value = error instanceof Error ? error.message : 'Falha ao carregar o mapa.'
+    }
   }
 
   async function loadMapFile(file) {
     try {
       const text = await readTextFile(file)
-      const parsed = parseMapFile(JSON.parse(text))
-      mapName.value = parsed.mapName
-      mapWidth.value = parsed.width
-      mapHeight.value = parsed.height
-      scaleInput.x = parsed.width
-      scaleInput.y = parsed.height
-      scaleLocked.value = parsed.scaleLocked
-      centerCellAxes.value = parsed.centerCellAxes
-      brushSize.value = parsed.brushSize
-      layerTree.value = parsed.layerTree
-      bakeTreeOffsets(layerTree.value)
-      const first = firstLayer(layerTree.value)
-      activeNodeId.value = first ? first.id : ''
-      pruneSelection(activeNodeId.value)
-      fixedColors.value = parsed.fixedColors
-      customColors.value = parsed.customColors
-      selectedColor.value = parsed.selectedColor
-      const maxCustom = parsed.customColors.reduce(
-        (max, item) => Math.max(max, item.id),
-        CUSTOM_ID_START - 1,
-      )
-      nextCustomId = maxCustom + 1
-      history.reset()
-      syncHistoryFlags()
-      previewCells.value = emptyPreview
-      bumpScene()
-      fileMessage.value = 'Mapa carregado.'
+      applyParsed(parseMapFile(JSON.parse(text)))
     } catch (error) {
       fileMessage.value = error instanceof Error ? error.message : 'Falha ao carregar o mapa.'
     }
@@ -978,17 +1085,24 @@ export function useMapEditor() {
   /**
    * @param {'dark' | 'light'} [theme='dark']
    */
-  function savePng(theme = 'dark') {
+  async function savePng(theme = 'dark') {
     const canvas = renderMapToCanvas({
       grid: grid.value,
       colors: allColors.value,
       theme,
       centerCellAxes: centerCellAxes.value,
     })
+    const id = libraryFileName.value || officialFileName('', mapName.value)
+    const pngBase64 = canvasToPngBase64(canvas)
+    try {
+      await saveLibraryPng(kind, id, pngBase64)
+    } catch {
+      /* o download abaixo ainda entrega o arquivo */
+    }
     canvas.toBlob((blob) => {
       if (!blob) return
       downloadBlob(blob, `${safeFileName(mapName.value)}.png`)
-      fileMessage.value = 'PNG exportado.'
+      fileMessage.value = `PNG exportado para ${mapsFolderLabel(kind)}/IMGS.`
     }, 'image/png')
   }
 
@@ -1020,6 +1134,10 @@ export function useMapEditor() {
     if (key === 'g') setTool(TOOLS.ROTATE)
   }
 
+  watch(mapName, () => {
+    touch()
+  }, { flush: 'sync' })
+
   return {
     mapName,
     grid,
@@ -1049,7 +1167,9 @@ export function useMapEditor() {
     extraCustom,
     canUndo,
     canRedo,
+    isDirty,
     fileMessage,
+    libraryFileName,
     layerTree,
     activeNodeId,
     selectedNodeIds,
@@ -1082,7 +1202,10 @@ export function useMapEditor() {
     undo,
     redo,
     saveMapFile,
+    saveDraft,
+    disposeEditor,
     loadMapFile,
+    loadMapFromLibrary,
     savePng,
     stampPerfectShape,
     handleKeydown,

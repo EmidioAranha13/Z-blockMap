@@ -4,9 +4,12 @@
  *
  * Página do editor: drawer (nome, escala, camadas, toolbar), canvas e status.
  */
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 import EditorToolbar from '@/components/EditorToolbar.vue'
 import LayerPanel from '@/components/LayerPanel.vue'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import MapCanvas from '@/components/MapCanvas.vue'
 import ScalePanel from '@/components/ScalePanel.vue'
 import SideCollapse from '@/components/SideCollapse.vue'
@@ -14,8 +17,19 @@ import StatusBar from '@/components/StatusBar.vue'
 import { TOOLS, isStrokeTool } from '@/constants/tools.js'
 import { useMapEditor } from '@/composables/useMapEditor.js'
 import { useTheme } from '@/composables/useTheme.js'
+import { LIBRARY_KINDS } from '@/constants/brand.js'
+import {
+  editorRouteName,
+  libraryHomePath,
+  libraryKindFromRoute,
+} from '@/utils/libraryApi.js'
 import luaIcon from '@/assets/lua.png'
 import solIcon from '@/assets/sol.png'
+
+const route = useRoute()
+const router = useRouter()
+const libraryKind = libraryKindFromRoute(route)
+const libraryHome = libraryHomePath(libraryKind)
 
 const {
   mapName,
@@ -45,7 +59,9 @@ const {
   extraCustom,
   canUndo,
   canRedo,
+  isDirty,
   fileMessage,
+  libraryFileName,
   layerTree,
   activeNodeId,
   selectedNodeIds,
@@ -76,16 +92,24 @@ const {
   undo,
   redo,
   saveMapFile,
+  saveDraft,
+  disposeEditor,
   loadMapFile,
+  loadMapFromLibrary,
   savePng,
   stampPerfectShape,
   handleKeydown,
-} = useMapEditor()
+} = useMapEditor(libraryKind)
 
 const { theme, toggleTheme } = useTheme()
+const loadingMap = ref(Boolean(route.query.file))
 const zoom = ref(1)
 const lod = ref(1)
 const fileInput = ref(null)
+const showLeaveModal = ref(false)
+const leaving = ref(false)
+const allowLeave = ref(false)
+let pendingLeaveTo = null
 const DRAWER_KEY = 'zblockmap-drawer-open'
 const drawerOpen = ref(readDrawerOpen())
 
@@ -129,19 +153,89 @@ async function onFilePicked(event) {
   input.value = ''
 }
 
-onMounted(() => {
+async function onSaveMap() {
+  const id = await saveMapFile()
+  if (id && route.query.file !== id) {
+    router.replace({ name: editorRouteName(libraryKind), query: { file: id } })
+  }
+}
+
+function goLibrary() {
+  router.push(libraryHome)
+}
+
+onBeforeRouteLeave((to) => {
+  if (allowLeave.value || !isDirty.value) return true
+  pendingLeaveTo = to
+  showLeaveModal.value = true
+  return false
+})
+
+function stayInEditor() {
+  showLeaveModal.value = false
+  pendingLeaveTo = null
+}
+
+async function leaveEditor() {
+  leaving.value = true
+  try {
+    await saveDraft()
+  } catch {
+    /* o usuário já confirmou a saída */
+  }
+  allowLeave.value = true
+  showLeaveModal.value = false
+  const target = pendingLeaveTo
+  pendingLeaveTo = null
+  leaving.value = false
+  if (target) router.push(target)
+}
+
+function onBeforeUnload(event) {
+  if (!isDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+watch(
+  () => libraryFileName.value,
+  (id) => {
+    if (!id || route.query.file === id) return
+    if (route.query.file) return
+    router.replace({ name: editorRouteName(libraryKind), query: { file: id } })
+  },
+)
+
+onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
+  window.addEventListener('beforeunload', onBeforeUnload)
+  const file = route.query.file
+  if (!file) {
+    loadingMap.value = false
+    return
+  }
+  loadingMap.value = true
+  try {
+    await loadMapFromLibrary(String(file))
+  } finally {
+    loadingMap.value = false
+  }
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('beforeunload', onBeforeUnload)
+  disposeEditor()
 })
 </script>
 
 <template>
   <div class="page">
     <header class="hero">
-      <p class="hero__kicker">Z-blockMap</p>
+      <div class="hero__left">
+        <button type="button" class="back" @click="goLibrary">← Biblioteca</button>
+        <p class="hero__kicker">{{ libraryKind === LIBRARY_KINDS.MODEL_3D ? '3D Builder' : 'Z-blockMap' }}</p>
+      </div>
       <button
         type="button"
         class="theme-switch"
@@ -157,7 +251,9 @@ onUnmounted(() => {
       </button>
     </header>
 
-    <div class="workspace">
+    <LoadingOverlay v-if="loadingMap" title="Carregando mapa" />
+
+    <div v-else class="workspace">
       <div class="drawer" :class="{ 'drawer--closed': !drawerOpen }">
         <aside class="side" id="editor-drawer">
           <label class="map-name">
@@ -219,7 +315,7 @@ onUnmounted(() => {
             @recolor="recolor($event.id, $event.hex)"
             @undo="undo"
             @redo="redo"
-            @save="saveMapFile"
+            @save="onSaveMap"
             @load="openLoadDialog"
             @png="savePng(theme)"
             @clear="clearMap"
@@ -265,6 +361,7 @@ onUnmounted(() => {
     </div>
 
     <StatusBar
+      v-if="!loadingMap"
       :map-name="mapName"
       :width="gridSize.width"
       :height="gridSize.height"
@@ -284,11 +381,23 @@ onUnmounted(() => {
       accept=".json,application/json,.zblockmap.json"
       @change="onFilePicked"
     />
+
+    <ConfirmModal
+      v-if="showLeaveModal"
+      title="Voltar à biblioteca?"
+      message="Há alterações que ainda não foram salvas no mapa. Um rascunho de segurança pode já ter sido gravado. Deseja mesmo sair?"
+      cancel-label="Continuar editando"
+      confirm-label="Sair"
+      :busy="leaving"
+      @cancel="stayInEditor"
+      @confirm="leaveEditor"
+    />
   </div>
 </template>
 
 <style scoped>
 .page {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -307,6 +416,27 @@ onUnmounted(() => {
   flex-shrink: 0;
   position: relative;
   z-index: 1;
+}
+
+.hero__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.back {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.back:hover {
+  border-color: var(--brass);
 }
 
 .hero__kicker {

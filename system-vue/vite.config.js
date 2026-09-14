@@ -7,12 +7,14 @@
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { mapsLibraryPlugin } from './vite-plugin-maps.js'
 
 const root = fileURLToPath(new URL('.', import.meta.url))
 const workspace = fileURLToPath(new URL('..', import.meta.url))
+const mapsRoot = fileURLToPath(new URL('../maps', import.meta.url))
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), mapsLibraryPlugin(mapsRoot)],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -24,6 +26,20 @@ export default defineConfig({
     open: true,
     fs: {
       allow: [root, workspace],
+    },
+    proxy: {
+      '/api/v1': {
+        target: 'https://pokopiapi.com',
+        changeOrigin: true,
+      },
+    },
+  },
+  preview: {
+    proxy: {
+      '/api/v1': {
+        target: 'https://pokopiapi.com',
+        changeOrigin: true,
+      },
     },
   },
 })

@@ -60,6 +60,8 @@ const props = defineProps({
   paintDabs: { type: Array, default: () => [] },
   /** Centro do desenho durante o giro (HUD e ângulo). */
   rotatePivot: { type: Object, default: null },
+  /** Só visualizar: esquerdo arrasta o mapa, sem pintar. */
+  viewOnly: { type: Boolean, default: false },
 })
 
 const emit = defineEmits({
@@ -460,7 +462,7 @@ function onPointerRawUpdate(event) {
  * @param {PointerEvent} event
  */
 function onPointerDown(event) {
-  const leftPan = event.button === 0 && panMode.value
+  const leftPan = event.button === 0 && (panMode.value || props.viewOnly)
   if (event.button === 2 || leftPan) {
     event.preventDefault()
     clearStampStroke()
@@ -620,13 +622,13 @@ watch(
 )
 
 watch(
-  () => [props.activeTool, isPanning.value, panMode.value, props.theme],
+  () => [props.activeTool, isPanning.value, panMode.value, props.theme, props.viewOnly],
   async () => {
     if (isPanning.value) {
       canvasCursor.value = 'grabbing'
       return
     }
-    if (panMode.value) {
+    if (panMode.value || props.viewOnly) {
       canvasCursor.value = 'grab'
       return
     }
@@ -685,6 +687,7 @@ watch(
         <img class="zoom__icon" :src="isFullscreen ? minimoIcon : expandIcon" alt="" />
       </button>
       <button
+        v-if="!viewOnly"
         type="button"
         class="zoom__pan"
         :class="{ 'zoom__pan--on': panMode }"

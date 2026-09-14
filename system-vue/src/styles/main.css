@@ -22,6 +22,8 @@ html.theme-dark {
   --swatch-on: #f4e6c5; /* Contorno da cor selecionada na paleta. */
   --danger: #c45c4a; /* Ações destrutivas (borda/fundo de Limpar, Remover). */
   --danger-text: #e8b4aa; /* Texto desses botões de perigo. */
+  --card-saved: #3d9a5f; /* Card salvo pelo botão Salvar mapa. */
+  --card-draft: #4a90e2; /* Card do rascunho automático de segurança. */
   --icon-filter: brightness(0) invert(1); /* Ícones PNG (olho, tinta, cadeado): no dark viram brancos. */
 }
 
@@ -40,6 +42,8 @@ html.theme-light {
   --swatch-on: #333333; /* Contorno da cor selecionada na paleta. */
   --danger: #b42318; /* Ações destrutivas (borda/fundo de Limpar, Remover). */
   --danger-text: #9b1c1c; /* Texto desses botões de perigo. */
+  --card-saved: #2e7d46; /* Card salvo pelo botão Salvar mapa. */
+  --card-draft: #1565c0; /* Card do rascunho automático de segurança. */
   --icon-filter: brightness(0); /* Ícones PNG (olho, tinta, cadeado): no light viram pretos. */
 }
 

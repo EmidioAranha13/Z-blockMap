@@ -24,3 +24,6 @@ export const MIN_CELL_FOR_GRID = 6
 /** Quantidade de cores fixas e de slots visíveis do histórico da roda. */
 export const FIXED_COLOR_COUNT = 7
 export const RECENT_COLOR_SLOTS = 7
+
+/** Inércia (ms) sem edição antes de gravar o rascunho de segurança. */
+export const AUTOSAVE_IDLE_MS = 15000

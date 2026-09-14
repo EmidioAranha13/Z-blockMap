@@ -1,13 +1,15 @@
 <script setup>
-/**
- * App.vue — raiz da interface.
- *
- * Neste protótipo existe uma única página (o editor de mapas).
- * Novas rotas/páginas podem ser adicionadas depois em src/pages/.
- */
-import MapEditorPage from '@/pages/MapEditorPage.vue'
+import { computed } from 'vue'
+import { RouterView, useRoute } from 'vue-router'
+
+const route = useRoute()
+const viewKey = computed(() => {
+  if (route.name === 'pixel-edit' || route.name === 'pixel-view') return route.fullPath
+  if (route.name === '3d-edit' || route.name === '3d-view') return route.fullPath
+  return 'shell'
+})
 </script>
 
 <template>
-  <MapEditorPage />
+  <RouterView :key="viewKey" />
 </template>
