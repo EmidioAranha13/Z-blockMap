@@ -1,9 +1,15 @@
 <script setup>
+/**
+ * Biblioteca do módulo 3D: os mesmos mapas Pixel Art, vistos como voxel.
+ * Editar continua no editor 2D — a fonte da verdade não é duplicada.
+ */
+import { useRouter } from 'vue-router'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import MapLibraryGrid from '@/components/MapLibraryGrid.vue'
 import { useMapLibrary } from '@/composables/useMapLibrary.js'
 import { LIBRARY_KINDS } from '@/constants/brand.js'
 
+const router = useRouter()
 const {
   items,
   loading,
@@ -11,12 +17,15 @@ const {
   pendingDelete,
   deleting,
   onCreate,
-  onView,
   onEdit,
   requestDelete,
   cancelDelete,
   confirmDelete,
-} = useMapLibrary(LIBRARY_KINDS.MODEL_3D)
+} = useMapLibrary(LIBRARY_KINDS.PIXEL)
+
+function onView(id) {
+  router.push({ name: '3d-view', query: { file: id } })
+}
 </script>
 
 <template>
@@ -24,8 +33,8 @@ const {
     <header class="head">
       <h2>Mapa 3D</h2>
       <p>
-        Prepare a base do mapa para virar um modelo 3D. Desenhe e organize o terreno aqui;
-        a conversão para volume entra na sequência do fluxo.
+        Cada pixel do mapa Pixel Art vira um cubo. Use Ver para orbitar o terreno em 360°;
+        a pintura da base continua no editor Pixel Art.
       </p>
     </header>
     <MapLibraryGrid
@@ -41,7 +50,7 @@ const {
     <ConfirmModal
       v-if="pendingDelete"
       title="Excluir mapa?"
-      :message="`Isso apaga “${pendingDelete.name}” da biblioteca. Não dá para desfazer.`"
+      :message="`Isso apaga “${pendingDelete.name}” da biblioteca Pixel Art. Não dá para desfazer.`"
       cancel-label="Cancelar"
       confirm-label="Excluir"
       danger

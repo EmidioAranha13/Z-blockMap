@@ -35,7 +35,7 @@ import {
   pointerToBlockClamped,
   readableCellSize,
 } from '@/utils/coords.js'
-import { drawMap, rasterizeGridToCanvas } from '@/utils/drawMap.js'
+import { drawMap, rasterizeColorMask, rasterizeGridToCanvas } from '@/utils/drawMap.js'
 import { makeIconCursor } from '@/utils/iconCursor.js'
 import { lodFactor } from '@/utils/lod.js'
 import { formatLineDistance } from '@/utils/shapes.js'
@@ -62,6 +62,8 @@ const props = defineProps({
   rotatePivot: { type: Object, default: null },
   /** Só visualizar: esquerdo arrasta o mapa, sem pintar. */
   viewOnly: { type: Boolean, default: false },
+  /** Cor da paleta a piscar no mapa (0 = nenhuma). */
+  highlightColorId: { type: Number, default: 0 },
 })
 
 const emit = defineEmits({
@@ -143,6 +145,14 @@ let lastEmittedLod = -1
 const mapBitmap = document.createElement('canvas')
 const mapBitmapCtx = mapBitmap.getContext('2d', { alpha: false }) || mapBitmap.getContext('2d')
 let mapBitmapKey = ''
+/** Máscara da cor destacada (preto no bloco, transparente no resto). */
+const highlightBitmap = document.createElement('canvas')
+const highlightBitmapCtx = highlightBitmap.getContext('2d')
+let highlightBitmapKey = ''
+/** 0 = cor original, 1 = versão mais escura (loop senoidal). */
+let highlightPulse = 0
+let highlightRaf = 0
+const HIGHLIGHT_PERIOD_MS = 900
 /** Último ponto CSS do pincel/borracha neste traço (caminho real do cursor). */
 let lastStrokeCanvas = null
 let stampStrokeActive = false
@@ -282,6 +292,8 @@ function draw() {
     pixelRatio: dpr,
     centerCellAxes: props.centerCellAxes,
     contentBitmap: syncMapBitmap(),
+    highlightBitmap: syncHighlightBitmap(),
+    highlightPulse,
   })
 }
 
@@ -308,6 +320,42 @@ function syncMapBitmap() {
   rasterizeGridToCanvas(mapBitmapCtx, props.grid, props.colors, theme)
   mapBitmapKey = key
   return mapBitmap
+}
+
+function syncHighlightBitmap() {
+  const colorId = props.highlightColorId
+  if (!colorId || !highlightBitmapCtx) return null
+  const c = cols.value
+  const r = rows.value
+  if (c <= 0 || r <= 0) return null
+  const key = `${props.sceneTick}|${c}x${r}|${colorId}`
+  if (key === highlightBitmapKey && highlightBitmap.width === c && highlightBitmap.height === r) {
+    return highlightBitmap
+  }
+  if (highlightBitmap.width !== c) highlightBitmap.width = c
+  if (highlightBitmap.height !== r) highlightBitmap.height = r
+  rasterizeColorMask(highlightBitmapCtx, props.grid, colorId)
+  highlightBitmapKey = key
+  return highlightBitmap
+}
+
+function stopHighlightPulse() {
+  if (highlightRaf) {
+    cancelAnimationFrame(highlightRaf)
+    highlightRaf = 0
+  }
+  highlightPulse = 0
+}
+
+function tickHighlightPulse(now) {
+  highlightPulse = (1 - Math.cos((2 * Math.PI * now) / HIGHLIGHT_PERIOD_MS)) / 2
+  draw()
+  highlightRaf = requestAnimationFrame(tickHighlightPulse)
+}
+
+function startHighlightPulse() {
+  stopHighlightPulse()
+  highlightRaf = requestAnimationFrame(tickHighlightPulse)
 }
 
 function scheduleDraw() {
@@ -574,6 +622,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  stopHighlightPulse()
   if (stampRaf) {
     cancelAnimationFrame(stampRaf)
     stampRaf = 0
@@ -588,6 +637,19 @@ onUnmounted(() => {
     else document.webkitExitFullscreen?.()
   }
 })
+
+watch(
+  () => props.highlightColorId,
+  (id) => {
+    if (id) {
+      if (!highlightRaf) startHighlightPulse()
+      else scheduleDraw()
+      return
+    }
+    stopHighlightPulse()
+    scheduleDraw()
+  },
+)
 
 watch(
   () => [cols.value, rows.value],

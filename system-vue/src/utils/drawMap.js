@@ -19,6 +19,9 @@ import { cartesianAxisPixel } from '@/utils/coords.js'
 import { cellsToLodRects, downsampleBoxRgb, lodFactor, makeRgbLookup } from '@/utils/lod.js'
 import { clipCells, expandBrush } from '@/utils/shapes.js'
 
+/** Quão escura a cor destacada fica no pico do pisca (overlay preto). */
+const HIGHLIGHT_DARKEN = 0.52
+
 /**
  * Pinta o mapa no contexto 2D informado.
  *
@@ -42,6 +45,8 @@ import { clipCells, expandBrush } from '@/utils/shapes.js'
  * @param {number} [options.pixelRatio] devicePixelRatio, para o downsample
  * @param {boolean} [options.centerCellAxes] eixos pelo bloco central (só ímpar×ímpar)
  * @param {HTMLCanvasElement} [options.contentBitmap] raster 1:1 já pronto (pan/hover/zoom)
+ * @param {HTMLCanvasElement} [options.highlightBitmap] máscara da cor destacada (alpha)
+ * @param {number} [options.highlightPulse] 0 = cor original, 1 = versão mais escura
  */
 export function drawMap(ctx, options) {
   const {
@@ -128,6 +133,25 @@ export function drawMap(ctx, options) {
     }
   }
 
+  const highlightPulse = options.highlightPulse || 0
+  if (options.highlightBitmap && highlightPulse > 0.001 && visW > 0 && visH > 0) {
+    blitBitmap(
+      ctx,
+      options.highlightBitmap,
+      startX,
+      startY,
+      visW,
+      visH,
+      originX,
+      originY,
+      cellSize,
+      cols,
+      rows,
+      pixelRatio,
+      HIGHLIGHT_DARKEN * highlightPulse,
+    )
+  }
+
   if (showPreview && previewCells.length > 0) {
     paintPreview(
       ctx,
@@ -200,6 +224,41 @@ export function rasterizeGridToCanvas(ctx, grid, colors, theme) {
 }
 
 /**
+ * Máscara 1 pixel por célula: preto opaco onde a cor bate, transparente no resto.
+ * Desenhada por cima do mapa com alpha oscilando para escurecer só essa cor.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number[][]} grid
+ * @param {number} colorId
+ */
+export function rasterizeColorMask(ctx, grid, colorId) {
+  const rows = grid.length
+  const cols = rows > 0 ? grid[0].length : 0
+  if (!cols || !rows || !colorId) return
+  const image = acquireMaskImageData(ctx, cols, rows)
+  const data = image.data
+  let i = 0
+  for (let y = 0; y < rows; y += 1) {
+    const row = grid[y]
+    for (let x = 0; x < cols; x += 1) {
+      if (row[x] === colorId) {
+        data[i] = 0
+        data[i + 1] = 0
+        data[i + 2] = 0
+        data[i + 3] = 255
+      } else {
+        data[i] = 0
+        data[i + 1] = 0
+        data[i + 2] = 0
+        data[i + 3] = 0
+      }
+      i += 4
+    }
+  }
+  ctx.putImageData(image, 0, 0)
+}
+
+/**
  * PNG: cada bloco vira um quadrado inteiro de cellSize×cellSize na origem
  * do cartesiano (putImageData, sem translate/escala interpolada).
  *
@@ -242,6 +301,7 @@ function paintExactBlocks(ctx, grid, colors, theme, originX, originY, cellSize) 
 }
 
 let pooledImage = null
+let pooledMask = null
 
 function acquireImageData(ctx, width, height) {
   if (pooledImage && pooledImage.width === width && pooledImage.height === height) {
@@ -249,6 +309,14 @@ function acquireImageData(ctx, width, height) {
   }
   pooledImage = ctx.createImageData(width, height)
   return pooledImage
+}
+
+function acquireMaskImageData(ctx, width, height) {
+  if (pooledMask && pooledMask.width === width && pooledMask.height === height) {
+    return pooledMask
+  }
+  pooledMask = ctx.createImageData(width, height)
+  return pooledMask
 }
 
 function blitBitmap(
@@ -264,10 +332,12 @@ function blitBitmap(
   cols,
   rows,
   pixelRatio,
+  alpha = 1,
 ) {
   const dpr = Math.max(1, pixelRatio)
   ctx.save()
   ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.globalAlpha = alpha
   ctx.beginPath()
   ctx.rect(originX * dpr, originY * dpr, cols * cellSize * dpr, rows * cellSize * dpr)
   ctx.clip()
