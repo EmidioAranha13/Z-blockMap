@@ -21,7 +21,11 @@ export const router = createRouter({
     },
     { path: '/pixel/edit', name: 'pixel-edit', component: MapEditorPage },
     { path: '/pixel/view', name: 'pixel-view', component: MapViewerPage },
-    { path: '/3d/edit', name: '3d-edit', component: MapEditorPage },
+    {
+      path: '/3d/edit',
+      name: '3d-edit',
+      component: () => import('@/pages/Map3DViewerPage.vue'),
+    },
     {
       path: '/3d/view',
       name: '3d-view',

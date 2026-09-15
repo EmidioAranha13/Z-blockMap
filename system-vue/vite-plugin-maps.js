@@ -420,6 +420,9 @@ async function readPngFile(filePath) {
 function compositeJsonMap(json) {
   const width = Math.max(1, Math.floor(Number(json.width)) || 1)
   const height = Math.max(1, Math.floor(Number(json.height)) || 1)
+  if (json.format === 'z-blockmap-3d' || layersHaveVoxelBlocks(json.layers)) {
+    return compositeVoxelTopDown(json, width, height)
+  }
   const out = Array.from({ length: height }, () => new Uint16Array(width))
   if (Array.isArray(json.layers) && json.layers.length > 0) {
     blitLayerTree(json.layers, out, width, height)
@@ -427,6 +430,70 @@ function compositeJsonMap(json) {
     blitGridOnto(json.cells, out, width, height, 0, 0)
   }
   return out
+}
+
+/**
+ * @param {unknown} nodes
+ */
+function layersHaveVoxelBlocks(nodes) {
+  if (!Array.isArray(nodes)) return false
+  for (const node of nodes) {
+    if (!node || typeof node !== 'object') continue
+    if (node.type === 'group' && layersHaveVoxelBlocks(node.children)) return true
+    if (Array.isArray(node.blocks)) return true
+  }
+  return false
+}
+
+/**
+ * Vista de cima: o cubo mais alto em cada coluna XZ pinta a prévia.
+ * @param {object} json
+ * @param {number} width
+ * @param {number} height
+ */
+function compositeVoxelTopDown(json, width, height) {
+  const out = Array.from({ length: height }, () => new Uint16Array(width))
+  const topY = Array.from({ length: height }, () => {
+    const row = new Int32Array(width)
+    row.fill(-1)
+    return row
+  })
+  blitVoxelTree(json.layers, out, topY, width, height)
+  return out
+}
+
+/**
+ * @param {unknown} nodes
+ * @param {Uint16Array[]} out
+ * @param {Int32Array[]} topY
+ * @param {number} width
+ * @param {number} height
+ */
+function blitVoxelTree(nodes, out, topY, width, height) {
+  if (!Array.isArray(nodes)) return
+  for (const node of nodes) {
+    if (!node || typeof node !== 'object' || node.visible === false) continue
+    if (node.type === 'group') {
+      blitVoxelTree(node.children, out, topY, width, height)
+      continue
+    }
+    if (!Array.isArray(node.blocks)) continue
+    for (const block of node.blocks) {
+      if (!block || typeof block !== 'object') continue
+      const x = Math.round(Number(block.x))
+      const z = Math.round(Number(block.z))
+      const y = Math.round(Number(block.y))
+      if (!Number.isInteger(x) || !Number.isInteger(z) || x < 0 || z < 0 || x >= width || z >= height) {
+        continue
+      }
+      const colorId = Number(block.colorId) || 0
+      if (!colorId) continue
+      if (y >= topY[z][x]) {
+        topY[z][x] = y
+        out[z][x] = colorId
+      }
+    }
+  }
 }
 
 /**

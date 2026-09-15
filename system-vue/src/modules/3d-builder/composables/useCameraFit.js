@@ -1,7 +1,7 @@
 /**
  * Enquadra a câmera no mapa centralizado em (0,0,0).
  */
-import { mapSpan } from '../utils/mapCoordinates.js'
+import { mapSpan } from '../utils/blockCoordinates.js'
 
 /**
  * @param {import('three').PerspectiveCamera} camera

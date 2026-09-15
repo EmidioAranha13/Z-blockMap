@@ -1,16 +1,43 @@
 /**
- * Bloco voxel derivado de um pixel do mapa 2D.
- *
- * x/z = coluna/linha da matriz; y = índice de altura (MVP = 0).
- * Vários blocos podem ocupar o mesmo (x, z) com y diferentes.
+ * Bloco voxel no mundo 3D.
  *
  * @typedef {object} VoxelBlock
+ * @property {number} x coluna (inteiro)
+ * @property {number} y altura (inteiro, 0 = chão)
+ * @property {number} z profundidade / linha da matriz 2D (inteiro)
+ * @property {string} color hex #rrggbb
+ * @property {number} [colorId] id da paleta Pixel Art
+ * @property {string} [materialId] futuro tipo de material
+ * @property {string} [blockType] 'base' | 'build' | outro
+ * @property {string} [source] origem: pixel art ('base') ou editor 3D ('build')
+ */
+
+/**
+ * Material de bloco (preparado para texturas futuras).
+ *
+ * @typedef {object} BlockMaterial
+ * @property {string} id
+ * @property {string} name
+ * @property {string} color
+ * @property {string} [texture]
+ */
+
+/**
+ * @typedef {object} FaceNormal
  * @property {number} x
  * @property {number} y
  * @property {number} z
- * @property {string} color hex #rrggbb
- * @property {number} [colorId] id da paleta (0 = vazio, não vira bloco)
- * @property {string} [blockType]
+ */
+
+/**
+ * @typedef {object} VoxelHit
+ * @property {'block' | 'ground'} kind
+ * @property {number} x
+ * @property {number} y
+ * @property {number} z
+ * @property {FaceNormal} faceNormal
+ * @property {string} face
+ * @property {number} [instanceId]
  */
 
 export {}

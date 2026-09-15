@@ -1,27 +1,36 @@
 <script setup>
 /**
- * Canvas WebGL do mapa voxel. A malha é um InstancedMesh, não v-for de cubos.
+ * Canvas WebGL do editor voxel. Um InstancedMesh para o mundo, não v-for.
  */
 import { onMounted, ref } from 'vue'
 import { useVoxelScene } from '../composables/useVoxelScene.js'
 
 const props = defineProps({
-  grid: { type: Array, required: true },
-  colors: { type: Array, required: true },
+  world: { type: Object, required: true },
+  tool: { type: String, required: true },
+  activeColor: { type: String, required: true },
+  selected: { type: Object, default: null },
   theme: { type: String, default: 'dark' },
-  sceneTick: { type: Number, default: 0 },
+  viewOnly: { type: Boolean, default: false },
+})
+
+const emit = defineEmits({
+  hover: null,
+  edit: null,
 })
 
 const canvasRef = ref(null)
-const { mount } = useVoxelScene(canvasRef, props)
+const { mount, capturePngBase64 } = useVoxelScene(canvasRef, props, emit)
 
 onMounted(() => {
   mount()
 })
+
+defineExpose({ capturePngBase64 })
 </script>
 
 <template>
-  <div class="map3d">
+  <div class="map3d" :class="viewOnly ? 'map3d--view' : `map3d--${tool}`">
     <canvas ref="canvasRef" class="map3d__canvas" />
   </div>
 </template>
@@ -43,5 +52,21 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   touch-action: none;
+}
+
+.map3d--add .map3d__canvas {
+  cursor: cell;
+}
+
+.map3d--remove .map3d__canvas {
+  cursor: pointer;
+}
+
+.map3d--select .map3d__canvas {
+  cursor: default;
+}
+
+.map3d--view .map3d__canvas {
+  cursor: grab;
 }
 </style>
